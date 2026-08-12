@@ -15,6 +15,7 @@
         ResizeMode="CanResize"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
+        Closing="Window_Closing"
         Closed="Window_Closed"
         SourceInitialized="Window_SourceInitialized"
         PreviewKeyDown="Window_PreviewKeyDown">

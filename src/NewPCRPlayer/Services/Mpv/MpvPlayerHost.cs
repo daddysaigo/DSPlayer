@@ -373,10 +373,22 @@ public sealed class MpvPlayerHost : IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        // Drop handlers so late events cannot reach a closed UI
+        try { Log = null; } catch { /* ignore */ }
+        try { FileLoaded = null; } catch { /* ignore */ }
+        try { EndFile = null; } catch { /* ignore */ }
+
         lock (_sync)
         {
             if (_handle != IntPtr.Zero)
             {
+                try { Command("quit"); } catch { /* ignore */ }
+                try
+                {
+                    // Brief wait so event loop can exit on shutdown
+                    Thread.Sleep(50);
+                }
+                catch { /* ignore */ }
                 try
                 {
                     MpvNative.TerminateDestroy(_handle);
@@ -389,6 +401,7 @@ public sealed class MpvPlayerHost : IDisposable
             }
         }
 
+        _wakeupCallback = null;
         GC.SuppressFinalize(this);
     }
 }

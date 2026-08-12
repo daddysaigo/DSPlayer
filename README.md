@@ -60,6 +60,5 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 
 詳細は [docs/SPEC.md](docs/SPEC.md)。
 
-1. ~~調査~~ 〜 5. ~~起動互換~~
-6. **コメント UI 仕上げ（>>N など）** ← いまここ
-7. 安定化・差し替え運用
+1. ~~調査~~ 〜 6. ~~コメント UI / 窓クローム~~
+7. **安定化・再接続・差し替え運用** ← いまここ
