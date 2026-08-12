@@ -84,6 +84,9 @@ public partial class MainWindow : Window
     private bool _contentRowFrozen;
     private double _frozenContentHeight;
 
+    /// <summary>WinForms min/max/close on the video panel (over mpv, not a top-level window).</summary>
+    private VideoChromeOverlay? _videoChrome;
+
     private const int WM_NCLBUTTONDOWN = 0x00A1;
     private const int HTCAPTION = 0x2;
     private const int HTLEFT = 10;
@@ -174,7 +177,61 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
         StateChanged += (_, _) => UpdateMaximizeButtonGlyph();
+    }
+
+    private void EnsureVideoChromeOverlay()
+    {
+        if (_videoChrome is not null) return;
+
+        _videoChrome = new VideoChromeOverlay();
+        _videoChrome.MinimizeClick += (_, _) =>
+        {
+            WindowState = WindowState.Minimized;
+        };
+        _videoChrome.MaximizeClick += (_, _) =>
+        {
+            if (WindowState == WindowState.Maximized && !_isFullscreen)
+                WindowState = WindowState.Normal;
+            else if (_isFullscreen)
+                ExitFullscreen();
+            else
+                WindowState = WindowState.Maximized;
+            UpdateMaximizeButtonGlyph();
+        };
+        _videoChrome.CloseClick += (_, _) => Close();
+        _videoChrome.AttachTo(PlayerPanel);
         UpdateMaximizeButtonGlyph();
+        WriteLog("video chrome overlay attached (WinForms child of PlayerPanel)");
+    }
+
+    private void UpdateVideoChromeHover()
+    {
+        if (_videoChrome is null || PlayerPanel.IsDisposed) return;
+
+        try
+        {
+            var screen = WinForms.Control.MousePosition;
+            var client = PlayerPanel.PointToClient(screen);
+            var size = PlayerPanel.ClientSize;
+
+            // Outside video panel entirely → hide (unless over chrome which is inside panel)
+            var overChrome = _videoChrome.Visible && _videoChrome.IsMouseOverChrome(client);
+            var inHot = VideoChromeOverlay.IsInHotZone(client, size);
+            var overPanel = client.X >= 0 && client.Y >= 0 && client.X < size.Width && client.Y < size.Height;
+
+            if ((overPanel && inHot) || overChrome)
+            {
+                _videoChrome.ShowChrome();
+            }
+            else
+            {
+                _videoChrome.HideChrome();
+            }
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     private void ApplySavedWindowPlacement()
@@ -224,7 +281,7 @@ public partial class MainWindow : Window
             GetVideoRectDip = () => Rect.Empty, // no NCHITTEST grips; poll handles it
             GetSideChromeDip = MeasureSideChromeDip,
             GetBottomChromeDip = MeasureBottomChromeDip,
-            GetTopChromeDip = MeasureTopChromeDip,
+            GetTopChromeDip = () => 0, // overlay does not consume layout space
         };
         _sizingHook.Attach();
         WriteLog("WM_SIZING hook attached (video-area AR); video-edge resize via pointer poll");
@@ -232,7 +289,7 @@ public partial class MainWindow : Window
 
     private double MeasureSideChromeDip()
     {
-        double side = 2; // outer border
+        double side = 0;
         if (_commentVisible)
         {
             var commentW = CommentColumn.Width.IsAbsolute
@@ -256,85 +313,10 @@ public partial class MainWindow : Window
         return writeH + infoH;
     }
 
-    /// <summary>Video caption bar (min/max/close) height when visible.</summary>
-    private double MeasureTopChromeDip()
-    {
-        if (VideoCaptionBar.Visibility != Visibility.Visible)
-            return 0;
-        return VideoCaptionRow.ActualHeight > 0 ? VideoCaptionRow.ActualHeight : 28;
-    }
-
-    private void BtnMinimize_Click(object sender, RoutedEventArgs e)
-    {
-        e.Handled = true;
-        WindowState = WindowState.Minimized;
-    }
-
-    private void BtnMaximize_Click(object sender, RoutedEventArgs e)
-    {
-        e.Handled = true;
-        // Window maximize (not immersive F11 fullscreen)
-        if (WindowState == WindowState.Maximized && !_isFullscreen)
-            WindowState = WindowState.Normal;
-        else if (_isFullscreen)
-            ExitFullscreen();
-        else
-            WindowState = WindowState.Maximized;
-        UpdateMaximizeButtonGlyph();
-    }
-
-    private void BtnClose_Click(object sender, RoutedEventArgs e)
-    {
-        e.Handled = true;
-        Close();
-    }
-
-    private void VideoCaptionBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        // Don't start drag when pressing a button (buttons handle their own clicks)
-        if (e.OriginalSource is DependencyObject d && FindAncestorButton(d) is not null)
-            return;
-
-        if (e.ClickCount == 2)
-        {
-            e.Handled = true;
-            BtnMaximize_Click(sender, e);
-            return;
-        }
-
-        if (e.LeftButton == MouseButtonState.Pressed &&
-            WindowState == WindowState.Normal &&
-            !_isFullscreen)
-        {
-            try
-            {
-                DragMove();
-                e.Handled = true;
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-    }
-
-    private static System.Windows.Controls.Button? FindAncestorButton(DependencyObject? d)
-    {
-        while (d is not null)
-        {
-            if (d is System.Windows.Controls.Button b)
-                return b;
-            d = VisualTreeHelper.GetParent(d);
-        }
-        return null;
-    }
-
     private void UpdateMaximizeButtonGlyph()
     {
-        if (BtnMaximize is null) return;
         var restored = WindowState == WindowState.Maximized || _isFullscreen;
-        BtnMaximize.Content = restored ? "❐" : "□";
-        BtnMaximize.ToolTip = restored ? "元のサイズに戻す" : "最大化";
+        _videoChrome?.SetMaximizedGlyph(restored);
     }
 
     /// <summary>Video host rect in screen pixels (for hit-testing under mpv).</summary>
@@ -411,6 +393,7 @@ public partial class MainWindow : Window
 
         var screen = WinForms.Control.MousePosition;
         UpdateFullscreenChromeFromPointer(screen);
+        UpdateVideoChromeHover();
 
         // Only interact when the top-level window under the cursor is THIS player.
         // Context menus, settings dialogs, and other popups have their own HWNDs —
@@ -446,6 +429,21 @@ public partial class MainWindow : Window
 
         if (_isFullscreen || WindowState == WindowState.Maximized)
             return;
+
+        // Don't steal clicks from the WinForms caption overlay
+        if (_videoChrome is not null && !_videoChrome.IsDisposed)
+        {
+            try
+            {
+                var vc = PlayerPanel.PointToClient(screen);
+                if (_videoChrome.Visible && _videoChrome.IsMouseOverChrome(vc))
+                {
+                    _pendingDragHt = 0;
+                    return;
+                }
+            }
+            catch { /* ignore */ }
+        }
 
         // Press: remember hit, do NOT start drag yet (preserve double-click)
         if (rising && ht != 0)
@@ -1424,6 +1422,9 @@ public partial class MainWindow : Window
                         ApplyInitialAspectLayout();
                 }));
             }));
+            // mpv child surface may cover chrome — reassert z-order
+            _videoChrome?.Reposition();
+            _videoChrome?.BringToFront();
             RefreshStatusBar();
             WriteLog("file-loaded ok");
         });
@@ -1440,6 +1441,13 @@ public partial class MainWindow : Window
 
         _player.Initialize(hwnd);
         _playerReady = true;
+        EnsureVideoChromeOverlay();
+        // mpv may create child surfaces after init — re-assert z-order
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            _videoChrome?.Reposition();
+            _videoChrome?.BringToFront();
+        }));
     }
 
     private void BeginPlaybackWithRetry()
@@ -1829,21 +1837,11 @@ public partial class MainWindow : Window
         var vis = visible ? Visibility.Visible : Visibility.Collapsed;
         WriteBar.Visibility = vis;
         InfoBar.Visibility = vis;
-        // Caption stays available in FS when chrome is shown (easy restore/close)
-        if (_isFullscreen)
-        {
-            VideoCaptionBar.Visibility = vis;
-            VideoCaptionRow.Height = visible ? new GridLength(28) : new GridLength(0);
-        }
-        else
-        {
-            VideoCaptionBar.Visibility = Visibility.Visible;
-            VideoCaptionRow.Height = new GridLength(28);
-        }
         _fsChromeVisible = visible;
+        // Video chrome is hover-based on the video surface (not FS write-bar chrome)
     }
 
-    /// <summary>Fullscreen: show chrome near bottom edge or top edge (caption).</summary>
+    /// <summary>Fullscreen: show write/status near bottom edge.</summary>
     private void UpdateFullscreenChromeFromPointer(System.Drawing.Point screen)
     {
         if (!_isFullscreen || _fsChromePinned) return;
@@ -1852,9 +1850,8 @@ public partial class MainWindow : Window
             var tl = PointToScreen(new System.Windows.Point(0, 0));
             var br = PointToScreen(new System.Windows.Point(ActualWidth, ActualHeight));
             var bottomZone = br.Y - 72;
-            var topZone = tl.Y + 40;
             var inX = screen.X >= tl.X && screen.X <= br.X;
-            if (inX && (screen.Y >= bottomZone || screen.Y <= topZone))
+            if (inX && screen.Y >= bottomZone)
             {
                 if (!_fsChromeVisible)
                     SetFullscreenChromeVisible(true);
