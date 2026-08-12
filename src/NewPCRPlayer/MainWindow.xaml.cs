@@ -183,6 +183,18 @@ public partial class MainWindow : Window
     {
         if (_videoChrome is not null) return;
 
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            // Handle not ready — retry after source init
+            SourceInitialized += (_, _) =>
+            {
+                if (_videoChrome is null)
+                    EnsureVideoChromeOverlay();
+            };
+            return;
+        }
+
         _videoChrome = new VideoChromeOverlay();
         _videoChrome.MinimizeClick += (_, _) =>
         {
@@ -199,9 +211,11 @@ public partial class MainWindow : Window
             UpdateMaximizeButtonGlyph();
         };
         _videoChrome.CloseClick += (_, _) => Close();
-        _videoChrome.AttachTo(PlayerPanel);
+
+        // Owned tool window: follows parent, paints ABOVE HwndHost/mpv (airspace fix)
+        _videoChrome.Attach(new Win32WindowHandle(hwnd), PlayerPanel);
         UpdateMaximizeButtonGlyph();
-        WriteLog("video chrome overlay attached (WinForms child of PlayerPanel)");
+        WriteLog("video chrome overlay attached (owned tool window over video)");
     }
 
     /// <summary>
@@ -252,7 +266,7 @@ public partial class MainWindow : Window
             if (inHot || overChrome)
             {
                 _videoChrome.ShowChrome();
-                _videoChrome.RaiseZOrder();
+                _videoChrome.RaiseAboveOwner();
             }
             else
             {
@@ -1466,20 +1480,20 @@ public partial class MainWindow : Window
 
         _player.Initialize(hwnd);
         _playerReady = true;
+        // Owned overlay (not child of wid panel — mpv D3D covers GDI siblings)
         EnsureVideoChromeOverlay();
-        // mpv creates VO child HWND asynchronously — raise z-order several times
         ScheduleVideoChromeZOrderBoost();
     }
 
     private void ScheduleVideoChromeZOrderBoost()
     {
-        // Immediate + delayed passes so we win over late mpv surface creation
         void Boost()
         {
             try
             {
-                _videoChrome?.Reposition();
-                _videoChrome?.RaiseZOrder();
+                _videoChrome?.SyncToVideoPanel();
+                if (_videoChrome is { Visible: true })
+                    _videoChrome.RaiseAboveOwner();
             }
             catch { /* ignore */ }
         }
@@ -1921,6 +1935,16 @@ public partial class MainWindow : Window
         try { _channelTimer?.Stop(); } catch { }
         try { _pointerTimer?.Stop(); } catch { }
         try { _fsChromeTimer?.Stop(); } catch { }
+        try
+        {
+            if (_videoChrome is not null)
+            {
+                _videoChrome.HideChrome();
+                _videoChrome.Dispose();
+                _videoChrome = null;
+            }
+        }
+        catch { }
         try { Mouse.OverrideCursor = null; } catch { }
         try { _sizingHook?.Dispose(); } catch { }
 
