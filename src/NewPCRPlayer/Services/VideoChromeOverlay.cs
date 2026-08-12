@@ -1,17 +1,13 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace NewPCRPlayer.Services;
 
 /// <summary>
-/// Min/Max/Close chrome as an <b>owned</b> tool window (not a free-floating app window).
-/// <para>
-/// Parenting WinForms controls under the mpv <c>wid</c> panel is clickable but invisible:
-/// mpv's D3D/GL VO paints over GDI siblings every frame. A small owned top-level HWND
-/// paints above the owner's HwndHost (standard WPF airspace workaround) while still
-/// minimizing/moving with the parent via Win32 ownership.
-/// </para>
+/// Min/Max/Close as an <b>owned</b> tool window over the video (not a free-floating app).
+/// Child-of-wid GDI controls are clickable but invisible under mpv D3D; ownership fixes paint.
 /// </summary>
 public sealed class VideoChromeOverlay : Form
 {
@@ -26,16 +22,16 @@ public sealed class VideoChromeOverlay : Form
     public const int HotWidth = 140;
     public const int HotHeight = 44;
 
-    // DEBUG: loud opaque colors until visibility is confirmed
-    private static readonly Color DebugBarColor = Color.Magenta;
-    private static readonly Color DebugMinColor = Color.Lime;
-    private static readonly Color DebugMaxColor = Color.Cyan;
-    private static readonly Color DebugCloseColor = Color.OrangeRed;
-    private static readonly Color DebugTextColor = Color.Black;
+    // PCRPlayer-ish dark chrome (opaque-ish; full alpha via layered later if needed)
+    private static readonly Color BarColor = Color.FromArgb(0xF2, 0x1A, 0x1A, 0x1A);
+    private static readonly Color BtnHover = Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF);
+    private static readonly Color BtnPress = Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF);
+    private static readonly Color CloseHover = Color.FromArgb(0xE8, 0x11, 0x23);
+    private static readonly Color ClosePress = Color.FromArgb(0xC5, 0x0F, 0x1F);
+    private static readonly Color TextColor = Color.FromArgb(0xE0, 0xE0, 0xE0);
 
     private const int WsExToolwindow = 0x00000080;
     private const int WsExNoactivate = 0x08000000;
-    private const int WsExLayered = 0x00080000;
 
     private static readonly IntPtr HwndTop = IntPtr.Zero;
     private const uint SwpNomove = 0x0002;
@@ -59,19 +55,16 @@ public sealed class VideoChromeOverlay : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ControlBox = false;
-        TopMost = false; // ownership — not global topmost float
-        BackColor = DebugBarColor;
-        ForeColor = DebugTextColor;
+        TopMost = false;
+        BackColor = BarColor;
+        ForeColor = TextColor;
         Size = new Size(ButtonWidth * 3, BarHeight);
         AutoScaleMode = AutoScaleMode.None;
-        // Don't steal focus from main player
         SetStyle(ControlStyles.Selectable, false);
 
-        _min = MakeButton("─", "最小化", DebugMinColor);
-        _max = MakeButton("□", "最大化", DebugMaxColor);
-        _close = MakeButton("✕", "閉じる", DebugCloseColor);
-        _close.FlatAppearance.MouseOverBackColor = Color.FromArgb(0xFF, 0x40, 0x40);
-        _close.FlatAppearance.MouseDownBackColor = Color.FromArgb(0xC5, 0x0F, 0x1F);
+        _min = MakeButton("─", "最小化", isClose: false);
+        _max = MakeButton("□", "最大化", isClose: false);
+        _close = MakeButton("✕", "閉じる", isClose: true);
 
         _min.Click += (_, _) => MinimizeClick?.Invoke(this, EventArgs.Empty);
         _max.Click += (_, _) => MaximizeClick?.Invoke(this, EventArgs.Empty);
@@ -82,7 +75,6 @@ public sealed class VideoChromeOverlay : Form
         Controls.Add(_min);
         LayoutButtons();
 
-        // Keep glued to video top-right (move/resize parent, DPI, etc.)
         _syncTimer = new System.Windows.Forms.Timer { Interval = 32 };
         _syncTimer.Tick += (_, _) =>
         {
@@ -93,7 +85,6 @@ public sealed class VideoChromeOverlay : Form
         };
     }
 
-    /// <summary>Do not activate when shown (avoids focus fight with main window).</summary>
     protected override bool ShowWithoutActivation => true;
 
     protected override CreateParams CreateParams
@@ -102,7 +93,6 @@ public sealed class VideoChromeOverlay : Form
         {
             var cp = base.CreateParams;
             cp.ExStyle |= WsExToolwindow | WsExNoactivate;
-            // Not layered yet (debug solid). Layered can be re-enabled for alpha later.
             return cp;
         }
     }
@@ -114,9 +104,6 @@ public sealed class VideoChromeOverlay : Form
         _max.AccessibleName = restored ? "元のサイズに戻す" : "最大化";
     }
 
-    /// <summary>
-    /// Bind to main window HWND as owner and to the video panel for geometry.
-    /// </summary>
     public void Attach(IWin32Window owner, Control videoPanel)
     {
         ArgumentNullException.ThrowIfNull(owner);
@@ -128,18 +115,10 @@ public sealed class VideoChromeOverlay : Form
         videoPanel.Resize += OnVideoResized;
         videoPanel.SizeChanged += OnVideoResized;
 
-        // Show once to establish ownership, then hide
         if (!Visible)
         {
-            try
-            {
-                Show(owner);
-            }
-            catch
-            {
-                // Fallback without owner if handle not ready
-                Show();
-            }
+            try { Show(owner); }
+            catch { Show(); }
         }
 
         Visible = false;
@@ -166,14 +145,13 @@ public sealed class VideoChromeOverlay : Form
             Height = BarHeight;
             LayoutButtons();
 
-            // Screen position of video panel top-right
             var pt = _videoPanel.PointToScreen(new Point(Math.Max(0, w - Width), 0));
             if (Location != pt)
                 Location = pt;
         }
         catch
         {
-            // ignore transient handle issues
+            // ignore
         }
     }
 
@@ -182,7 +160,6 @@ public sealed class VideoChromeOverlay : Form
         if (IsDisposed || !IsHandleCreated || !Visible) return;
         try
         {
-            // Stay above owner content (including HwndHost) without TopMost=true over all apps
             SetWindowPos(Handle, HwndTop, 0, 0, 0, 0,
                 SwpNomove | SwpNosize | SwpNoactivate | SwpShowwindow);
         }
@@ -197,14 +174,7 @@ public sealed class VideoChromeOverlay : Form
         if (IsDisposed) return;
         SyncToVideoPanel();
         if (!Visible)
-        {
             Visible = true;
-            // Ensure solid debug paint
-            BackColor = DebugBarColor;
-            _min.BackColor = DebugMinColor;
-            _max.BackColor = DebugMaxColor;
-            _close.BackColor = DebugCloseColor;
-        }
         RaiseAboveOwner();
         try
         {
@@ -224,7 +194,6 @@ public sealed class VideoChromeOverlay : Form
     public bool IsMouseOverChrome(Point clientOnVideoPanel)
     {
         if (_videoPanel is null) return false;
-        // Chrome occupies top-right Width x Height of video client
         var r = new Rectangle(
             Math.Max(0, _videoPanel.ClientSize.Width - Width),
             0,
@@ -254,25 +223,35 @@ public sealed class VideoChromeOverlay : Form
         _close.SetBounds(ButtonWidth * 2, 0, ButtonWidth, BarHeight);
     }
 
-    private static Button MakeButton(string text, string tip, Color back)
+    private static Button MakeButton(string text, string tip, bool isClose)
     {
         var b = new Button
         {
             Text = text,
             FlatStyle = FlatStyle.Flat,
-            BackColor = back,
-            ForeColor = DebugTextColor,
-            Font = new Font("Segoe UI Symbol", 10f, FontStyle.Bold),
+            BackColor = BarColor,
+            ForeColor = TextColor,
+            Font = new Font("Segoe UI Symbol", 9f, FontStyle.Regular),
             TabStop = false,
             Cursor = Cursors.Arrow,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             UseVisualStyleBackColor = false,
         };
-        b.FlatAppearance.BorderSize = 1;
-        b.FlatAppearance.BorderColor = Color.Black;
-        b.FlatAppearance.MouseOverBackColor = ControlPaint.Light(back);
-        b.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(back);
+        b.FlatAppearance.BorderSize = 0;
+        if (isClose)
+        {
+            b.FlatAppearance.MouseOverBackColor = CloseHover;
+            b.FlatAppearance.MouseDownBackColor = ClosePress;
+            b.MouseEnter += (_, _) => b.ForeColor = Color.White;
+            b.MouseLeave += (_, _) => b.ForeColor = TextColor;
+        }
+        else
+        {
+            b.FlatAppearance.MouseOverBackColor = BtnHover;
+            b.FlatAppearance.MouseDownBackColor = BtnPress;
+        }
+
         var tt = new ToolTip { ShowAlways = false, AutoPopDelay = 2000 };
         tt.SetToolTip(b, tip);
         return b;
@@ -280,16 +259,18 @@ public sealed class VideoChromeOverlay : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        using var br = new SolidBrush(DebugBarColor);
+        using var br = new SolidBrush(BarColor);
         e.Graphics.FillRectangle(br, ClientRectangle);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        using (var br = new SolidBrush(DebugBarColor))
+        e.Graphics.SmoothingMode = SmoothingMode.None;
+        using (var br = new SolidBrush(BarColor))
             e.Graphics.FillRectangle(br, ClientRectangle);
-        using (var pen = new Pen(Color.Yellow, 2))
-            e.Graphics.DrawRectangle(pen, 1, 1, Width - 3, Height - 3);
+        // subtle bottom edge
+        using (var pen = new Pen(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)))
+            e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
         base.OnPaint(e);
     }
 
