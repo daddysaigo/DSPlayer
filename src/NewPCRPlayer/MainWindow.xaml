@@ -65,10 +65,53 @@
                     <ColumnDefinition x:Name="CommentColumn" Width="340" MinWidth="160"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Full-bleed video (no chrome frame). Drag-to-move via panel mouse down. -->
-                <WindowsFormsHost x:Name="VideoHost" Grid.Column="0" Background="Black">
-                    <wf:Panel x:Name="PlayerPanel" BackColor="Black" Dock="Fill" />
-                </WindowsFormsHost>
+                <!--
+                  Video column: WPF caption strip ABOVE WindowsFormsHost (not over it).
+                  Avoids HwndHost airspace — buttons stay real WPF children of this window.
+                -->
+                <Grid x:Name="VideoColumnGrid" Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition x:Name="VideoCaptionRow" Height="28"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border x:Name="VideoCaptionBar"
+                            Grid.Row="0"
+                            Background="#E61A1A1A"
+                            BorderBrush="#FF2A2A2A"
+                            BorderThickness="0,0,0,1"
+                            MouseLeftButtonDown="VideoCaptionBar_MouseLeftButtonDown">
+                        <DockPanel LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Right"
+                                        Orientation="Horizontal"
+                                        VerticalAlignment="Stretch">
+                                <Button x:Name="BtnMinimize"
+                                        Style="{StaticResource CaptionButtonStyle}"
+                                        ToolTip="最小化"
+                                        Click="BtnMinimize_Click"
+                                        Content="─"/>
+                                <Button x:Name="BtnMaximize"
+                                        Style="{StaticResource CaptionButtonStyle}"
+                                        ToolTip="最大化"
+                                        Click="BtnMaximize_Click"
+                                        Content="□"/>
+                                <Button x:Name="BtnClose"
+                                        Style="{StaticResource CaptionCloseButtonStyle}"
+                                        ToolTip="閉じる"
+                                        Click="BtnClose_Click"
+                                        Content="✕"/>
+                            </StackPanel>
+                            <!-- Empty left area: double-click caption = maximize (Windows-like) -->
+                            <Border Background="Transparent"/>
+                        </DockPanel>
+                    </Border>
+
+                    <WindowsFormsHost x:Name="VideoHost"
+                                      Grid.Row="1"
+                                      Background="Black">
+                        <wf:Panel x:Name="PlayerPanel" BackColor="Black" Dock="Fill" />
+                    </WindowsFormsHost>
+                </Grid>
 
                 <GridSplitter x:Name="CommentSplitter"
                               Grid.Column="1"
