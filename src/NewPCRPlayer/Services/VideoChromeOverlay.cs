@@ -22,10 +22,10 @@ public sealed class VideoChromeOverlay : Form
     public const int HotWidth = 140;
     public const int HotHeight = 44;
 
-    // PCRPlayer-ish dark chrome (opaque-ish; full alpha via layered later if needed)
-    private static readonly Color BarColor = Color.FromArgb(0xF2, 0x1A, 0x1A, 0x1A);
-    private static readonly Color BtnHover = Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF);
-    private static readonly Color BtnPress = Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF);
+    // WinForms Form/Button BackColor must be opaque (no alpha) — throws otherwise.
+    private static readonly Color BarColor = Color.FromArgb(0x1A, 0x1A, 0x1A);
+    private static readonly Color BtnHover = Color.FromArgb(0x3A, 0x3A, 0x3A);
+    private static readonly Color BtnPress = Color.FromArgb(0x4A, 0x4A, 0x4A);
     private static readonly Color CloseHover = Color.FromArgb(0xE8, 0x11, 0x23);
     private static readonly Color ClosePress = Color.FromArgb(0xC5, 0x0F, 0x1F);
     private static readonly Color TextColor = Color.FromArgb(0xE0, 0xE0, 0xE0);
@@ -269,7 +269,7 @@ public sealed class VideoChromeOverlay : Form
         using (var br = new SolidBrush(BarColor))
             e.Graphics.FillRectangle(br, ClientRectangle);
         // subtle bottom edge
-        using (var pen = new Pen(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)))
+        using (var pen = new Pen(Color.FromArgb(0xFF, 0x33, 0x33, 0x33)))
             e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
         base.OnPaint(e);
     }
