@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="設定 - NewPCRPlayer"
-        Width="440"
-        Height="560"
-        MinWidth="380"
-        MinHeight="420"
+        Width="460"
+        Height="640"
+        MinWidth="400"
+        MinHeight="480"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="True"
@@ -21,19 +21,40 @@
             <StackPanel>
                 <TextBlock Text="コメント表示" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,12"/>
 
-                <!-- レス情報行 -->
-                <TextBlock Text="レス情報（番号・名前・日時）" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="UI テーマ" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="UiThemeBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
+                              ToolTip="書込欄・ステータス・クロームの色。コメントリストとは独立"/>
+                </Grid>
+                <Grid Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="コメント見た目" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CommentThemeBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
+                              ToolTip="Classic = 平面リスト / Grok = カード風。UI テーマとは独立"/>
+                </Grid>
+
+                <!-- A: レス情報 -->
+                <TextBlock Text="A レス情報（番号・名前・日時）" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                     <CheckBox x:Name="ChkShowNumber" Content="レス番号" Foreground="#FFE8E8E8" Margin="0,0,16,0"/>
                     <CheckBox x:Name="ChkShowName" Content="名前" Foreground="#FFE8E8E8" Margin="0,0,16,0"/>
                     <CheckBox x:Name="ChkShowDate" Content="日時" Foreground="#FFE8E8E8"/>
                 </StackPanel>
-                <Grid Margin="0,0,0,8">
+                <Grid Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="56"/>
-                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="52"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="フォント" Foreground="#FF888888" VerticalAlignment="Center"/>
                     <ComboBox x:Name="HeaderFontFamilyBox" Grid.Column="1" Height="28" Margin="0,0,8,0"
@@ -45,19 +66,34 @@
                              CaretBrush="#FF000000" VerticalContentAlignment="Center"
                              ToolTip="8〜36"/>
                 </Grid>
-                <TextBlock x:Name="HeaderPreview"
-                           Text="123 ：名前：2026/01/01 12:00:00"
-                           Foreground="#FF000000" Background="#FFF0F0F0" Padding="6,4" Margin="0,0,0,16"
-                           TextWrapping="Wrap"/>
-
-                <!-- 本文 -->
-                <TextBlock Text="本文" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="56"/>
-                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="100"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="太さ" Foreground="#FF888888" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="HeaderWeightBox" Grid.Column="1" Height="28" Margin="0,0,8,0"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"/>
+                    <TextBlock Grid.Column="2" Text="色" Foreground="#FF888888" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox x:Name="HeaderColorBox" Grid.Column="3" Height="28" IsEditable="True"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
+                              ToolTip="#RRGGBB"/>
+                </Grid>
+                <TextBlock x:Name="HeaderPreview"
+                           Text="123 ：名前：2026/01/01 12:00:00"
+                           Foreground="#FF888888" Background="#FFF0F0F0" Padding="6,4" Margin="0,0,0,16"
+                           TextWrapping="Wrap"/>
+
+                <!-- B: 本文 -->
+                <TextBlock Text="B 本文" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="52"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="フォント" Foreground="#FF888888" VerticalAlignment="Center"/>
                     <ComboBox x:Name="BodyFontFamilyBox" Grid.Column="1" Height="28" Margin="0,0,8,0"
@@ -69,9 +105,25 @@
                              CaretBrush="#FF000000" VerticalContentAlignment="Center"
                              ToolTip="8〜36"/>
                 </Grid>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="100"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="太さ" Foreground="#FF888888" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="BodyWeightBox" Grid.Column="1" Height="28" Margin="0,0,8,0"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"/>
+                    <TextBlock Grid.Column="2" Text="色" Foreground="#FF888888" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox x:Name="BodyColorBox" Grid.Column="3" Height="28" IsEditable="True"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
+                              ToolTip="#RRGGBB"/>
+                </Grid>
                 <TextBlock x:Name="BodyPreview"
                            Text="本文あいうえお ABC 123"
-                           Foreground="#FF000000" Background="#FFF0F0F0" Padding="6,4" Margin="0,0,0,16"
+                           Foreground="#FF111111"
+                           Background="#FFF0F0F0" Padding="6,4" Margin="0,0,0,16"
                            TextWrapping="Wrap"/>
 
                 <TextBlock Text="掲示板" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,4,0,10"/>

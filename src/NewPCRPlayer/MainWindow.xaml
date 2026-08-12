@@ -51,6 +51,192 @@
         </ContextMenu>
     </Window.ContextMenu>
 
+    <!-- Comment list themes: switch via settings CommentListTheme (Classic | Grok) -->
+    <Window.Resources>
+        <!-- Thin, quiet vertical scrollbar for comment list -->
+        <Style x:Key="CommentScrollBarThumb" TargetType="Thumb">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="#66A0A0A0" CornerRadius="3" Margin="1"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="CommentScrollBar" TargetType="ScrollBar">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Width" Value="6"/>
+            <Setter Property="MinWidth" Value="6"/>
+            <Setter Property="Opacity" Value="0.55"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent" Width="6">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Opacity="0" IsTabStop="False" Command="ScrollBar.PageUpCommand" Height="0.1"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource CommentScrollBarThumb}"/>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Opacity="0" IsTabStop="False" Command="ScrollBar.PageDownCommand" Height="0.1"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="6"/>
+                    <Setter Property="MinHeight" Value="6"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ===== Classic: PCR-like flat rows (revert target) ===== -->
+        <Style x:Key="CommentItemStyleClassic" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="6,8"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="#FFD0D0D0"
+                                BorderThickness="0,0,0,1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FFE8E8E8"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsNew}" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FFB8D4F0"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF4A90D9"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="3,0,0,1"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <DataTemplate x:Key="CommentItemTemplateClassic">
+            <StackPanel>
+                <TextBox Text="{Binding DisplayHeader, Mode=OneWay}"
+                         IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                         Foreground="{DynamicResource HeaderForeground}"
+                         FontFamily="{DynamicResource HeaderFontFamily}"
+                         FontSize="{DynamicResource HeaderFontSize}"
+                         FontWeight="{DynamicResource HeaderFontWeight}"
+                         TextWrapping="Wrap" IsReadOnlyCaretVisible="True" Cursor="IBeam"
+                         Padding="0" Margin="0,0,0,1" Focusable="True"/>
+                <ctrl:AnchorBodyBlock Body="{Binding BodyText, Mode=OneWay}"
+                                      FontFamily="{DynamicResource BodyFontFamily}"
+                                      FontSize="{DynamicResource BodyFontSize}"
+                                      FontWeight="{DynamicResource BodyFontWeight}"
+                                      Foreground="{DynamicResource BodyForeground}"
+                                      Margin="0,2,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Grok: soft paper + cards, body-first hierarchy, quiet new accent ===== -->
+        <Style x:Key="CommentItemStyleGrok" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="8,0,8,8"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Card"
+                                Background="#FFFFFCF8"
+                                BorderBrush="#FFE4DFD6"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="10,8,10,10"
+                                SnapsToDevicePixels="True">
+                            <Border x:Name="Accent"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="3,0,0,0"
+                                    Padding="8,0,0,0">
+                                <ContentPresenter/>
+                            </Border>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- No IsSelected chrome — body text selection is the selection model -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Card" Property="BorderBrush" Value="#FFD5CFC4"/>
+                            </Trigger>
+                            <!-- New: soft amber wash + left accent (readable, not “selected blue”) -->
+                            <DataTrigger Binding="{Binding IsNew}" Value="True">
+                                <Setter TargetName="Card" Property="Background" Value="#FFFFF6E8"/>
+                                <Setter TargetName="Card" Property="BorderBrush" Value="#FFE8D4A8"/>
+                                <Setter TargetName="Accent" Property="BorderBrush" Value="#FFE0A84A"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <DataTemplate x:Key="CommentItemTemplateGrok">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <!-- Res# pill (hidden if settings hide res number) -->
+                <Border Grid.Row="0" Grid.Column="0"
+                        Background="#FFEEE8DF" CornerRadius="4"
+                        Padding="7,2" Margin="0,0,8,0" VerticalAlignment="Top">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowResBadge}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding Number}"
+                               Foreground="#FF6B6560"
+                               FontSize="11" FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </Border>
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         Text="{Binding DisplayHeaderNoNumber, Mode=OneWay}"
+                         IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                         Foreground="{DynamicResource HeaderForeground}"
+                         FontFamily="{DynamicResource HeaderFontFamily}"
+                         FontSize="{DynamicResource HeaderFontSize}"
+                         FontWeight="{DynamicResource HeaderFontWeight}"
+                         TextWrapping="Wrap" IsReadOnlyCaretVisible="True" Cursor="IBeam"
+                         Padding="0" VerticalAlignment="Center" Focusable="True"/>
+                <ctrl:AnchorBodyBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                      Body="{Binding BodyText, Mode=OneWay}"
+                                      FontFamily="{DynamicResource BodyFontFamily}"
+                                      FontSize="{DynamicResource BodyFontSize}"
+                                      FontWeight="{DynamicResource BodyFontWeight}"
+                                      Foreground="{DynamicResource BodyForeground}"
+                                      Margin="0,10,0,0"/>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
     <!-- No outer chrome border (user preference: edge-to-edge) -->
     <Grid x:Name="RootLayoutGrid" Background="{StaticResource WindowBackgroundBrush}">
             <Grid.RowDefinitions>
@@ -90,10 +276,7 @@
                         Background="#FFF0F0F0"
                         BorderBrush="#FFD0D0D0"
                         BorderThickness="1,0,0,0">
-                    <!--
-                      Virtualized list. Latest N posts only (MaxDisplayedComments).
-                      Light skin: bg #f0f0f0, text black (PCRPlayer default-ish).
-                    -->
+                    <!-- Theme (Classic/Grok) applied at runtime via ApplyCommentListTheme -->
                     <ListBox x:Name="CommentList"
                              Background="Transparent"
                              BorderThickness="0"
@@ -107,70 +290,17 @@
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              VirtualizingPanel.ScrollUnit="Pixel"
                              ScrollViewer.ScrollChanged="CommentScroll_ScrollChanged"
-                             SizeChanged="CommentList_SizeChanged">
+                             SizeChanged="CommentList_SizeChanged"
+                             ItemContainerStyle="{StaticResource CommentItemStyleClassic}"
+                             ItemTemplate="{StaticResource CommentItemTemplateClassic}">
+                        <ListBox.Resources>
+                            <Style TargetType="ScrollBar" BasedOn="{StaticResource CommentScrollBar}"/>
+                        </ListBox.Resources>
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <VirtualizingStackPanel/>
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Padding" Value="6,8"/>
-                                <Setter Property="Margin" Value="0,0,0,2"/>
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ListBoxItem">
-                                            <Border x:Name="Bd"
-                                                    Background="{TemplateBinding Background}"
-                                                    BorderBrush="#FFD0D0D0"
-                                                    BorderThickness="0,0,0,1"
-                                                    Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="Bd" Property="Background" Value="#FFE8E8E8"/>
-                                                </Trigger>
-                                                <!-- 新着: 青系 + 左ライン（最後に評価してホバーより優先） -->
-                                                <DataTrigger Binding="{Binding IsNew}" Value="True">
-                                                    <Setter TargetName="Bd" Property="Background" Value="#FFB8D4F0"/>
-                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#FF4A90D9"/>
-                                                    <Setter TargetName="Bd" Property="BorderThickness" Value="3,0,0,1"/>
-                                                </DataTrigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel>
-                                    <!-- Read-only TextBox: selectable/copyable (TextBlock cannot select) -->
-                                    <TextBox Text="{Binding DisplayHeader, Mode=OneWay}"
-                                             IsReadOnly="True"
-                                             BorderThickness="0"
-                                             Background="Transparent"
-                                             Foreground="#FF000000"
-                                             FontFamily="{DynamicResource HeaderFontFamily}"
-                                             FontSize="{DynamicResource HeaderFontSize}"
-                                             TextWrapping="Wrap"
-                                             IsReadOnlyCaretVisible="True"
-                                             Cursor="IBeam"
-                                             Padding="0"
-                                             Focusable="True"/>
-                                    <!-- >>N is clickable; whole post still selectable via ListBox multi-select -->
-                                    <ctrl:AnchorBodyBlock Body="{Binding BodyText, Mode=OneWay}"
-                                                          FontFamily="{DynamicResource BodyFontFamily}"
-                                                          FontSize="{DynamicResource BodyFontSize}"
-                                                          Foreground="#FF000000"
-                                                          Margin="0,4,0,0"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
                     </ListBox>
                 </Border>
             </Grid>

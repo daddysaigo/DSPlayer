@@ -9,6 +9,8 @@ public sealed class CommentItem : INotifyPropertyChanged
 {
     private bool _isNew;
     private string _displayHeader = "";
+    private string _displayHeaderNoNumber = "";
+    private bool _showResBadge;
 
     public CommentItem(BbsPost post, AppSettings settings, bool isNew = false)
     {
@@ -33,6 +35,29 @@ public sealed class CommentItem : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Header without res# (Grok theme shows number in a separate pill).</summary>
+    public string DisplayHeaderNoNumber
+    {
+        get => _displayHeaderNoNumber;
+        private set
+        {
+            if (_displayHeaderNoNumber == value) return;
+            _displayHeaderNoNumber = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool ShowResBadge
+    {
+        get => _showResBadge;
+        private set
+        {
+            if (_showResBadge == value) return;
+            _showResBadge = value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool IsNew
     {
         get => _isNew;
@@ -46,7 +71,9 @@ public sealed class CommentItem : INotifyPropertyChanged
 
     public void RefreshHeader(AppSettings settings)
     {
-        DisplayHeader = settings.FormatResHeader(Post);
+        DisplayHeader = settings.FormatResHeader(Post, includeNumber: true);
+        DisplayHeaderNoNumber = settings.FormatResHeader(Post, includeNumber: false);
+        ShowResBadge = settings.ShowResNumber;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
