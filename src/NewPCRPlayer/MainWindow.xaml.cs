@@ -204,24 +204,55 @@ public partial class MainWindow : Window
         WriteLog("video chrome overlay attached (WinForms child of PlayerPanel)");
     }
 
-    private void UpdateVideoChromeHover()
+    /// <summary>
+    /// Returns true when pointer is in the video top-right chrome hot zone
+    /// (or over the visible overlay). Resize hit-test must not run in this zone.
+    /// </summary>
+    private bool TryGetVideoChromeClientPoint(System.Drawing.Point screen, out System.Drawing.Point client)
+    {
+        client = default;
+        if (_videoChrome is null || PlayerPanel.IsDisposed) return false;
+        try
+        {
+            client = PlayerPanel.PointToClient(screen);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool IsPointerInVideoChromeZone(System.Drawing.Point screen)
+    {
+        if (!TryGetVideoChromeClientPoint(screen, out var client))
+            return false;
+        var size = PlayerPanel.ClientSize;
+        if (VideoChromeOverlay.IsInHotZone(client, size))
+            return true;
+        return _videoChrome!.Visible && _videoChrome.IsMouseOverChrome(client);
+    }
+
+    private void UpdateVideoChromeHover(System.Drawing.Point screen)
     {
         if (_videoChrome is null || PlayerPanel.IsDisposed) return;
 
         try
         {
-            var screen = WinForms.Control.MousePosition;
-            var client = PlayerPanel.PointToClient(screen);
-            var size = PlayerPanel.ClientSize;
+            if (!TryGetVideoChromeClientPoint(screen, out var client))
+            {
+                _videoChrome.HideChrome();
+                return;
+            }
 
-            // Outside video panel entirely → hide (unless over chrome which is inside panel)
+            var size = PlayerPanel.ClientSize;
             var overChrome = _videoChrome.Visible && _videoChrome.IsMouseOverChrome(client);
             var inHot = VideoChromeOverlay.IsInHotZone(client, size);
-            var overPanel = client.X >= 0 && client.Y >= 0 && client.X < size.Width && client.Y < size.Height;
 
-            if ((overPanel && inHot) || overChrome)
+            if (inHot || overChrome)
             {
                 _videoChrome.ShowChrome();
+                _videoChrome.RaiseZOrder();
             }
             else
             {
@@ -393,11 +424,21 @@ public partial class MainWindow : Window
 
         var screen = WinForms.Control.MousePosition;
         UpdateFullscreenChromeFromPointer(screen);
-        UpdateVideoChromeHover();
+        UpdateVideoChromeHover(screen);
+
+        // --- Chrome hot zone wins over resize / drag (本家: 右上は矢印＋ボタン) ---
+        if (IsPointerInVideoChromeZone(screen))
+        {
+            Mouse.OverrideCursor = System.Windows.Input.Cursors.Arrow;
+            _pendingDragHt = 0;
+            _videoDragActive = false;
+            // Still track button state so we don't false-trigger drag later
+            var downChrome = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+            _lbuttonWasDown = downChrome;
+            return;
+        }
 
         // Only interact when the top-level window under the cursor is THIS player.
-        // Context menus, settings dialogs, and other popups have their own HWNDs —
-        // treating their screen coords as "video" steals left-clicks.
         if (!IsScreenPointOverOurTopLevel(screen.X, screen.Y))
         {
             ClearPointerCursorState();
@@ -405,6 +446,7 @@ public partial class MainWindow : Window
         }
 
         var video = GetVideoScreenRectPx();
+        // Fullscreen / maximized: no edge-resize path
         var ht = (_isFullscreen || WindowState == WindowState.Maximized)
             ? 0
             : HitTestVideo(screen, video);
@@ -429,21 +471,6 @@ public partial class MainWindow : Window
 
         if (_isFullscreen || WindowState == WindowState.Maximized)
             return;
-
-        // Don't steal clicks from the WinForms caption overlay
-        if (_videoChrome is not null && !_videoChrome.IsDisposed)
-        {
-            try
-            {
-                var vc = PlayerPanel.PointToClient(screen);
-                if (_videoChrome.Visible && _videoChrome.IsMouseOverChrome(vc))
-                {
-                    _pendingDragHt = 0;
-                    return;
-                }
-            }
-            catch { /* ignore */ }
-        }
 
         // Press: remember hit, do NOT start drag yet (preserve double-click)
         if (rising && ht != 0)
@@ -1422,9 +1449,7 @@ public partial class MainWindow : Window
                         ApplyInitialAspectLayout();
                 }));
             }));
-            // mpv child surface may cover chrome — reassert z-order
-            _videoChrome?.Reposition();
-            _videoChrome?.BringToFront();
+            ScheduleVideoChromeZOrderBoost();
             RefreshStatusBar();
             WriteLog("file-loaded ok");
         });
@@ -1442,12 +1467,36 @@ public partial class MainWindow : Window
         _player.Initialize(hwnd);
         _playerReady = true;
         EnsureVideoChromeOverlay();
-        // mpv may create child surfaces after init — re-assert z-order
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        // mpv creates VO child HWND asynchronously — raise z-order several times
+        ScheduleVideoChromeZOrderBoost();
+    }
+
+    private void ScheduleVideoChromeZOrderBoost()
+    {
+        // Immediate + delayed passes so we win over late mpv surface creation
+        void Boost()
         {
-            _videoChrome?.Reposition();
-            _videoChrome?.BringToFront();
-        }));
+            try
+            {
+                _videoChrome?.Reposition();
+                _videoChrome?.RaiseZOrder();
+            }
+            catch { /* ignore */ }
+        }
+
+        Boost();
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, Boost);
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, Boost);
+        _ = Task.Run(async () =>
+        {
+            foreach (var ms in new[] { 100, 300, 800, 1500, 3000 })
+            {
+                try { await Task.Delay(ms).ConfigureAwait(false); }
+                catch { return; }
+                try { await Dispatcher.InvokeAsync(Boost); }
+                catch { /* ignore */ }
+            }
+        });
     }
 
     private void BeginPlaybackWithRetry()
