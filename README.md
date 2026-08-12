@@ -63,11 +63,9 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 詳細は [docs/SPEC.md](docs/SPEC.md)。
 
 1. ~~調査~~ 〜 6. ~~コメント UI / 窓クローム~~
-7. **安定化・再接続・差し替え運用** — 実装済み、**実機受け入れ・チェックリスト消化が次**
+7. ~~安定化・再接続・終了処理・差し替え運用~~ **完了**（2026-08-12）
 
-### いまの優先タスク
+### 次のステップ
 
-1. 配信切断→再接続→再開の長時間確認
-2. 終了後プロセス残存なし
-3. [docs/PECARECORDER.md](docs/PECARECORDER.md) のチェックリスト消化
-4. （任意）FS 切替のさらなるスムーズ化 / メモリ無限増の追加調査
+- [docs/PECARECORDER.md](docs/PECARECORDER.md) に従い **本番差し替え・運用**
+- 不具合は実運用ベースで対応

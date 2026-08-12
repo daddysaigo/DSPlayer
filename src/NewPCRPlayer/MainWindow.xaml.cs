@@ -102,6 +102,7 @@ public partial class MainWindow : Window
     private VideoChromeOverlay? _videoChrome;
 
     private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int WM_SETREDRAW = 0x000B;
     private const int HTCAPTION = 0x2;
     private const int HTLEFT = 10;
     private const int HTRIGHT = 11;
@@ -138,6 +139,15 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprc, IntPtr hrgn, uint flags);
+
+    private const uint RdwInvalidate = 0x0001;
+    private const uint RdwErase = 0x0004;
+    private const uint RdwFrame = 0x0400;
+    private const uint RdwAllChildren = 0x0080;
+    private const uint RdwUpdatenow = 0x0100;
 
     public MainWindow() : this(LaunchArgs.Parse(Array.Empty<string>()))
     {
@@ -2086,45 +2096,101 @@ public partial class MainWindow : Window
 
     private void EnterFullscreen()
     {
-        // Multi-line write freeze is window-layout specific — clear before maximize
-        UnfreezeContentRow();
-
         _preFullscreenWidth = Width;
         _preFullscreenHeight = Height;
         _preFullscreenLeft = Left;
         _preFullscreenTop = Top;
         if (_sizingHook is not null) _sizingHook.Enabled = false;
 
-        // 本家寄り: 最大化の「前」にバーをレイアウトから外し、動画を先に全面化してから FS へ。
-        // （最大化後に外すと「バー付きFS → 一瞬で消えて動画が伸びる」になる）
-        _isFullscreen = true;
-        AttachFsChromeFloat();
-        SetFullscreenChromeVisible(false);
-        try { RootLayoutGrid.UpdateLayout(); } catch { /* ignore */ }
+        // Suppress intermediate paints: zero chrome + maximize as one visual step
+        // (otherwise: bars collapse → video expands in windowed → then maximize = びよん)
+        var hwnd = new WindowInteropHelper(this).EnsureHandle();
+        SetWindowRedraw(hwnd, false);
+        try
+        {
+            // Multi-line write freeze is window-layout specific
+            UnfreezeContentRow();
 
-        WindowState = WindowState.Normal;
-        WindowState = WindowState.Maximized;
+            _isFullscreen = true;
+            AttachFsChromeFloat();
+            SetFullscreenChromeVisible(false);
 
-        // Maximize 後もフロートは非表示のまま（Show はしない）
-        SetFullscreenChromeVisible(false);
+            // Single transition to maximized (avoid Normal→Maximized double layout when already Normal)
+            if (WindowState != WindowState.Maximized)
+                WindowState = WindowState.Maximized;
+            else
+            {
+                // Already maximized via caption: force a clean max layout after chrome detach
+                WindowState = WindowState.Normal;
+                WindowState = WindowState.Maximized;
+            }
+
+            SetFullscreenChromeVisible(false);
+        }
+        finally
+        {
+            SetWindowRedraw(hwnd, true);
+        }
+
         UpdateMaximizeButtonGlyph();
-        WriteLog("fullscreen: chrome detached before maximize (no size pop)");
+        WriteLog("fullscreen: enter (redraw suspended for chrome+maximize)");
     }
 
     private void ExitFullscreen()
     {
-        DetachFsChromeFloat();
-        WindowState = WindowState.Normal;
-        if (_preFullscreenWidth > 0) Width = _preFullscreenWidth;
-        if (_preFullscreenHeight > 0) Height = _preFullscreenHeight;
-        Left = _preFullscreenLeft;
-        Top = _preFullscreenTop;
-        _isFullscreen = false;
+        var hwnd = new WindowInteropHelper(this).EnsureHandle();
+        SetWindowRedraw(hwnd, false);
+        try
+        {
+            // Put bars back WHILE still maximized so proportions match windowed layout
+            // before the size change. Unmaximize-first left rows=0 → video full-bleed in a
+            // small window, then bars returned and video shrank (= exit びよん).
+            DetachFsChromeFloat();
+            _isFullscreen = false;
+
+            // Multi-line write height while layout is already windowed-chrome (still max frame)
+            if (WriteBox.Height > 28.5)
+                ApplyWriteBoxHeightChange(28, WriteBox.Height);
+
+            // Restore geometry in one step (avoid Normal's intermediate restore-bounds flicker)
+            WindowState = WindowState.Normal;
+            if (_preFullscreenWidth > 0) Width = _preFullscreenWidth;
+            if (_preFullscreenHeight > 0) Height = _preFullscreenHeight;
+            Left = _preFullscreenLeft;
+            Top = _preFullscreenTop;
+
+            try { UpdateLayout(); } catch { /* ignore */ }
+        }
+        finally
+        {
+            SetWindowRedraw(hwnd, true);
+        }
+
         if (_sizingHook is not null) _sizingHook.Enabled = true;
-        // Re-sync write box vs window if multi-line text remains
-        if (WriteBox.Height > 28.5)
-            ApplyWriteBoxHeightChange(28, WriteBox.Height);
         UpdateMaximizeButtonGlyph();
+        WriteLog("fullscreen: exit (bars first, then restore size)");
+    }
+
+    /// <summary>
+    /// Freeze WM paints while we mutate layout + WindowState so the user never sees
+    /// intermediate sizes (the FS 「びよん」).
+    /// </summary>
+    private static void SetWindowRedraw(IntPtr hwnd, bool enable)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        try
+        {
+            SendMessage(hwnd, WM_SETREDRAW, enable ? new IntPtr(1) : IntPtr.Zero, IntPtr.Zero);
+            if (enable)
+            {
+                RedrawWindow(hwnd, IntPtr.Zero, IntPtr.Zero,
+                    RdwInvalidate | RdwErase | RdwFrame | RdwAllChildren | RdwUpdatenow);
+            }
+        }
+        catch
+        {
+            // ignore — worst case is the old multi-step bounce
+        }
     }
 
     /// <summary>
