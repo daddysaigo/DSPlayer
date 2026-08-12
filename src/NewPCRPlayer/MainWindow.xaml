@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:wf="clr-namespace:System.Windows.Forms;assembly=System.Windows.Forms"
+        xmlns:ctrl="clr-namespace:NewPCRPlayer.Controls"
         Title="NewPCRPlayer"
         Width="1280"
         Height="720"
@@ -160,20 +161,12 @@
                                              Cursor="IBeam"
                                              Padding="0"
                                              Focusable="True"/>
-                                    <TextBox Text="{Binding BodyText, Mode=OneWay}"
-                                             IsReadOnly="True"
-                                             BorderThickness="0"
-                                             Background="Transparent"
-                                             Foreground="#FF000000"
-                                             FontFamily="{DynamicResource BodyFontFamily}"
-                                             FontSize="{DynamicResource BodyFontSize}"
-                                             TextWrapping="Wrap"
-                                             AcceptsReturn="True"
-                                             IsReadOnlyCaretVisible="True"
-                                             Cursor="IBeam"
-                                             Margin="0,4,0,0"
-                                             Padding="0"
-                                             Focusable="True"/>
+                                    <!-- >>N is clickable; whole post still selectable via ListBox multi-select -->
+                                    <ctrl:AnchorBodyBlock Body="{Binding BodyText, Mode=OneWay}"
+                                                          FontFamily="{DynamicResource BodyFontFamily}"
+                                                          FontSize="{DynamicResource BodyFontSize}"
+                                                          Foreground="#FF000000"
+                                                          Margin="0,4,0,0"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

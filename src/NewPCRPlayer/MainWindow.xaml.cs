@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using NewPCRPlayer.Controls;
 using NewPCRPlayer.Models;
 using NewPCRPlayer.Services;
 using NewPCRPlayer.Services.Bbs;
@@ -141,6 +142,10 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         CommentList.ItemsSource = _comments;
+        // Bubbling >>N clicks from AnchorBodyBlock inside the item template
+        CommentList.AddHandler(
+            AnchorBodyBlock.AnchorClickEvent,
+            new EventHandler<AnchorClickEventArgs>(CommentList_AnchorClick));
         ApplyCommentPanelSettings();
         ApplyCommentFont();
         ApplySavedWindowPlacement();
@@ -1390,6 +1395,67 @@ public partial class MainWindow : Window
     }
 
     private void ScrollCommentsToEnd() => ScrollCommentsToEndCore();
+
+    /// <summary>Phase 6b: >>N in comment body → jump to that res in the list.</summary>
+    private void CommentList_AnchorClick(object? sender, AnchorClickEventArgs e)
+    {
+        e.Handled = true;
+        JumpToResNumber(e.ResNumber);
+    }
+
+    private void JumpToResNumber(int resNumber)
+    {
+        if (resNumber <= 0 || _comments.Count == 0)
+            return;
+
+        CommentItem? target = null;
+        foreach (var c in _comments)
+        {
+            if (c.Number == resNumber)
+            {
+                target = c;
+                break;
+            }
+        }
+
+        if (target is null)
+        {
+            // Not in the displayed tail (only latest N kept)
+            WriteLog("anchor >>" + resNumber + " not in displayed comments");
+            StatusText.Text = ">>" + resNumber + " は表示範囲外です";
+            return;
+        }
+
+        try
+        {
+            _userScrollingComments = true;
+            _stickToBottom = false;
+            CommentList.SelectedItem = target;
+            CommentList.ScrollIntoView(target);
+            // Brief visual pulse via IsNew
+            var prevNew = target.IsNew;
+            target.IsNew = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                try { CommentList.ScrollIntoView(target); } catch { /* ignore */ }
+            }));
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1200).ConfigureAwait(false);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // Don't clear if a real new-post batch set it again
+                    if (ReferenceEquals(CommentList.SelectedItem, target))
+                        target.IsNew = prevNew;
+                });
+            });
+            WriteLog("anchor jump >>" + resNumber);
+        }
+        catch (Exception ex)
+        {
+            WriteLog("anchor jump: " + ex.Message);
+        }
+    }
 
     private static ScrollViewer? FindDescendantScrollViewer(DependencyObject root)
     {
