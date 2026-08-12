@@ -22,68 +22,44 @@
 | 2 | 最小プレイヤー（URL + libmpv + 音量） | 完了 |
 | 3 | 掲示板（Contact URL / コメント） | 完了 |
 | 4 | PCRPlayer 風 UI（書込・情報バー・設定） | 完了 |
-| 5 | PeCaRecorder 起動互換の完成 | 完了 |
-| 6a | board設定（interval/UA/正規化/URL rewrite/placement） | **完了** |
-| 6b | コメントUI（chat風・新着・>>N） | 未着手 |
-| 6 | フルスクリーン・設定・リーク対策 | 一部先行（FS/音量/起動音量0） |
+| 5 | PeCaRecorder 起動互換 | 完了 |
+| 6a | board 設定・正規化・URL rewrite・配置 | 完了 |
+| 6b | コメント UI（新着・下端追従・フォント・**>>N**） | **進行中** |
+| 6c | 窓クローム（動画右上 min/max/close オーバーレイ） | 完了 |
+| 7 | 安定化・差し替え運用・リーク点検 | 未着手 |
+
+## Phase 6b 受け入れ条件
+
+1. 新着レスがハイライトされ、最下部へ自動スクロールする
+2. コメント表示フォント（レス情報行 / 本文）を設定できる
+3. レス情報行の 番号・名前・日時 を個別に表示 ON/OFF できる
+4. 本文中の `>>N` / `＞＞N` クリックで表示中リスト内の該当レスへジャンプする
+5. 表示範囲外の N のときはステータス等で分かる
 
 ## PeCaRecorder 起動
 
-オプション → 全般の設定 → プレイヤー
-
-**正規登録（元 PCRPlayer と同じ）:**
+**正規登録:**
 
 ```
 引数: "$x" "$0" "$3"
 タイプ: FLV|WMV
 ```
 
-| プレースホルダ | 意味 | 例 |
-|----------------|------|-----|
-| `$x` | ストリーム / プレイリスト URL | `/stream/` または `/pls/`（実機は `/pls/<id>?tip=host:port` が多い） |
-| `$0` | チャンネル名 | `木寺 (FLV)` |
-| `$3` | Contact URL（掲示板） | `https://.../read.cgi/...` |
-| `$8` | ビットレート（未使用可） | `2947` |
-| `$9` | タイプ（未使用可） | `FLV` |
+| プレースホルダ | 意味 |
+|----------------|------|
+| `$x` | ストリーム / プレイリスト URL |
+| `$0` | チャンネル名 |
+| `$3` | Contact URL（掲示板） |
 
-実測 PeCaRecorder 起動例:
+プレイヤーは `/pls/` を `/stream/` に変換して再生（`tip` クエリは維持）。
 
-```
-NewPCRPlayer.exe
-  "http://127.0.0.1:7144/pls/<ChannelID>?tip=host:port"
-  "チャンネル名"
-  "https://.../read.cgi/..."
-```
+詳細: [PECARECORDER.md](PECARECORDER.md)
 
-### 引数パース方針（Phase 5）
+## 技術スタック
 
-1. **位置優先**: 第1引数が PeerCast media なら  
-   `[$x] [$0?] [$3?]` として解釈  
-   - 第3引数の HTTP URL は BBS キーワードが無くても Contact とする  
-     （`$3` 互換）
-2. **ヒューリスティック**: 上記以外は URL 種別で振り分け
-3. プレイヤーは `/pls/` を `/stream/` に変換して再生（`tip` クエリは維持）
-
-差し替え手順・チェックリスト: [PECARECORDER.md](PECARECORDER.md)
-
-## 技術スタック（確定）
-
-- UI: WPF (.NET 8)
-- 再生: libmpv（自前 P/Invoke 薄いラッパー）
-- 言語: C#
+- UI: WPF (.NET 8) + 一部 WinForms（mpv ホスト / 動画上クローム）
+- 再生: libmpv（P/Invoke）
 - 対象: Windows x64
-
-## Phase 2 受け入れ条件
-
-1. `NewPCRPlayer.exe "http://localhost:7144/stream/...." "ch名"` で起動
-2. libmpv で当該 URL を再生しウィンドウに映像が出る
-3. マウスホイールで音量調整
-
-## Phase 5 受け入れ条件
-
-1. 引数 `"$x" "$0" "$3"` で media / チャンネル名 / Contact が取れる
-2. `/pls/?tip=` → `/stream/?tip=` 変換
-3. ドキュメントに PeCaRecorder 登録と PCRPlayer.exe 差し替え手順がある
 
 ## 開発対象外
 
