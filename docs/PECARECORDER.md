@@ -109,14 +109,26 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
   "https://bbs.example/test/read.cgi/board/1234567890/"
 ```
 
-## 4. 受け入れチェックリスト（Phase 5）
+## 4. 受け入れチェックリスト
 
-- [ ] PeCaRecorder からダブルクリック再生で NewPCRPlayer が起動する
+### 起動・再生（Phase 5）
+
+- [ ] PeCaRecorder からダブルクリックで起動する
 - [ ] `/pls/?tip=` が映像として再生される
-- [ ] ウィンドウタイトル / 情報バーにチャンネル名が出る
-- [ ] `$3` の Contact でコメントが流れる（または板トップから最新スレ解決）
-- [ ] PCRBrowser 連携（BBS ボタン）が動く
+- [ ] 情報バーにチャンネル名が出る
+- [ ] `$3` の Contact でコメントが流れる
 - [ ] （差し替え時）`PCRPlayer.exe` 名でも起動する
+
+### 安定化（Phase 7）
+
+- [ ] 配信を止めてもプレイヤーが落ちず「再接続」表示になる
+- [ ] 配信再開後に映像が戻る
+- [ ] プレイヤーを閉じたあとプロセスが残らない（タスクマネージャ）
+- [ ] 連続でチャンネルを開き直しても安定する
+- [ ] 動画右上ホバーで min/max/close が出て操作できる
+- [ ] フルスクリーン（F11）で書込/ステータスが隠れ、下端ホバーで出る
+- [ ] コメント `>>N` で該当レスへジャンプする
+- [ ] 設定のフォント・レス情報 ON/OFF が即反映する
 
 ## 5. トラブルシュート
 
@@ -126,3 +138,5 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 | コメント無し | 引数に `$3` があるか、Contact が BBS URL か |
 | libmpv エラー | `lib\mpv-2.dll`（または `mpv-1.dll`）が出力先にあるか |
 | 起動しない | x64 OS か、.NET 8 Desktop Runtime が入っているか |
+| 起動直後に落ちる | `%LOCALAPPDATA%\NewPCRPlayer\player.log` を確認 |
+| 再接続し続ける | tip / チャンネル ID が生きているか、YP で配信中か |

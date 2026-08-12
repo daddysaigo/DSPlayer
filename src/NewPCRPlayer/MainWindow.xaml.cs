@@ -27,9 +27,12 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private MpvPlayerHost? _player;
     private bool _playerReady;
+    private bool _closing;
     private readonly string _logPath;
     private CancellationTokenSource? _retryCts;
     private int _loadAttempts;
+    private int _reconnectGeneration;
+    /// <summary>Soft cap for initial burst; live streams keep retrying beyond this with longer delay.</summary>
     private const int MaxLoadAttempts = 12;
 
     private readonly ObservableCollection<CommentItem> _comments = new();
@@ -642,6 +645,7 @@ public partial class MainWindow : Window
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statsTimer.Tick += (_, _) =>
         {
+            if (_closing) return;
             UpdateVideoAspectFromMpv();
             RefreshStatusBar();
         };
@@ -650,7 +654,9 @@ public partial class MainWindow : Window
         _channelTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _channelTimer.Tick += async (_, _) =>
         {
+            if (_closing) return;
             await RefreshChannelInfoAsync().ConfigureAwait(true);
+            if (_closing) return;
             RefreshStatusBar();
         };
         _channelTimer.Start();
@@ -1511,44 +1517,70 @@ public partial class MainWindow : Window
         WriteLog("hwnd=" + hwnd.ToInt64().ToString("X"));
         _player = new MpvPlayerHost();
         _player.Log += (_, msg) => WriteLog(msg);
-        _player.FileLoaded += (_, _) => Dispatcher.InvokeAsync(() =>
-        {
-            _retryCts?.Cancel();
-            _playStartedUtc = DateTime.UtcNow;
-            _initialAspectApplied = false;
-            UpdateVideoAspectFromMpv();
-            // Defer one frame so video-params are stable
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-            {
-                UpdateVideoAspectFromMpv();
-                ApplyInitialAspectLayout();
-                // Retry shortly — some streams report size a bit later
-                Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
-                {
-                    if (!_initialAspectApplied)
-                        ApplyInitialAspectLayout();
-                }));
-            }));
-            ScheduleVideoChromeZOrderBoost();
-            RefreshStatusBar();
-            WriteLog("file-loaded ok");
-        });
-        _player.EndFile += (_, args) => Dispatcher.InvokeAsync(() =>
-        {
-            WriteLog("end-file: " + args.Reason + " " + args.ErrorMessage);
-            if (args.IsError && _loadAttempts < MaxLoadAttempts)
-            {
-                ScheduleRetry();
-                return;
-            }
-            RefreshStatusBar();
-        });
+        _player.FileLoaded += OnPlayerFileLoaded;
+        _player.EndFile += OnPlayerEndFile;
 
         _player.Initialize(hwnd);
         _playerReady = true;
         // Owned overlay (not child of wid panel — mpv D3D covers GDI siblings)
         EnsureVideoChromeOverlay();
         ScheduleVideoChromeZOrderBoost();
+    }
+
+    private void OnPlayerFileLoaded(object? sender, EventArgs e)
+    {
+        if (_closing) return;
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            if (_closing) return;
+            // Successful play: reset burst counter so later drops reconnect cleanly
+            _loadAttempts = 0;
+            _reconnectGeneration++;
+            try { _retryCts?.Cancel(); } catch { /* ignore */ }
+            _retryCts = new CancellationTokenSource();
+            _playStartedUtc = DateTime.UtcNow;
+            _initialAspectApplied = false;
+            UpdateVideoAspectFromMpv();
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (_closing) return;
+                UpdateVideoAspectFromMpv();
+                ApplyInitialAspectLayout();
+                Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+                {
+                    if (!_closing && !_initialAspectApplied)
+                        ApplyInitialAspectLayout();
+                }));
+            }));
+            ScheduleVideoChromeZOrderBoost();
+            StatusText.Text = "再生中";
+            RefreshStatusBar();
+            WriteLog("file-loaded ok");
+        });
+    }
+
+    private void OnPlayerEndFile(object? sender, EndFileEventArgs args)
+    {
+        if (_closing) return;
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            if (_closing) return;
+            WriteLog("end-file: " + args.Reason + " " + (args.ErrorMessage ?? ""));
+            // quit = intentional; ignore
+            if (string.Equals(args.Reason, "quit", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Live PeerCast: error / eof / stop / redirect → reconnect with backoff
+            if (args.IsError ||
+                args.Reason is "error" or "eof" or "stop" or "redirect")
+            {
+                StatusText.Text = "切断 — 再接続します…";
+                ScheduleRetry(liveContinuous: true);
+                return;
+            }
+
+            RefreshStatusBar();
+        });
     }
 
     private void ScheduleVideoChromeZOrderBoost()
@@ -1581,24 +1613,31 @@ public partial class MainWindow : Window
 
     private void BeginPlaybackWithRetry()
     {
-        _retryCts?.Cancel();
+        if (_closing) return;
+        try { _retryCts?.Cancel(); } catch { /* ignore */ }
+        _retryCts?.Dispose();
         _retryCts = new CancellationTokenSource();
         _loadAttempts = 0;
+        _reconnectGeneration++;
         _initialAspectApplied = false;
         TryLoadOnce();
     }
 
     private void TryLoadOnce()
     {
-        if (_player is null || !_launchArgs.HasStream) return;
+        if (_closing || _player is null || !_launchArgs.HasStream) return;
         _loadAttempts++;
         var playUrl = ResolveAttemptUrl(_loadAttempts);
         WriteLog("loading attempt " + _loadAttempts + ": " + playUrl);
-        try { _player.Load(playUrl); }
+        try
+        {
+            StatusText.Text = _loadAttempts <= 1 ? "接続中…" : "再接続中… (" + _loadAttempts + ")";
+            _player.Load(playUrl);
+        }
         catch (Exception ex)
         {
             WriteLog("load threw: " + ex.Message);
-            if (_loadAttempts < MaxLoadAttempts) ScheduleRetry();
+            ScheduleRetry(liveContinuous: true);
         }
     }
 
@@ -1606,23 +1645,64 @@ public partial class MainWindow : Window
     {
         var stream = _launchArgs.PlaybackUrl ?? _launchArgs.StreamUrl!;
         var original = _launchArgs.StreamUrl ?? stream;
-        if (attempt >= 9 && !string.Equals(stream, original, StringComparison.OrdinalIgnoreCase))
+        // Alternate stream/pls a few times in case one form fails
+        if (attempt is >= 3 and <= 6 &&
+            !string.Equals(stream, original, StringComparison.OrdinalIgnoreCase) &&
+            attempt % 2 == 0)
             return original;
         return stream;
     }
 
-    private void ScheduleRetry()
+    /// <param name="liveContinuous">
+    /// When true, keep retrying past <see cref="MaxLoadAttempts"/> with longer backoff
+    /// (PeerCast live drops are normal).
+    /// </param>
+    private void ScheduleRetry(bool liveContinuous = false)
     {
+        if (_closing) return;
+
+        if (_retryCts is null || _retryCts.IsCancellationRequested)
+        {
+            try { _retryCts?.Dispose(); } catch { /* ignore */ }
+            _retryCts = new CancellationTokenSource();
+        }
+
         var cts = _retryCts;
-        if (cts is null || cts.IsCancellationRequested) return;
+        var gen = _reconnectGeneration;
+        var attempt = Math.Max(1, _loadAttempts);
+
+        int delayMs;
+        if (!liveContinuous && attempt >= MaxLoadAttempts)
+        {
+            StatusText.Text = "接続に失敗しました";
+            WriteLog("retry stopped after " + attempt + " attempts");
+            return;
+        }
+
+        if (attempt <= MaxLoadAttempts)
+            delayMs = Math.Min(4000, 600 + attempt * 250);
+        else
+            delayMs = Math.Min(30000, 4000 + (attempt - MaxLoadAttempts) * 1500);
+
+        StatusText.Text = "再接続待機 " + (delayMs / 1000.0).ToString("0.#") + "s…";
+        WriteLog("schedule retry in " + delayMs + "ms (attempt=" + attempt + ")");
+
         _ = Task.Run(async () =>
         {
             try
             {
-                await Task.Delay(Math.Min(3000, 800 + _loadAttempts * 200), cts.Token);
-                await Dispatcher.InvokeAsync(TryLoadOnce);
+                await Task.Delay(delayMs, cts.Token).ConfigureAwait(false);
+                if (_closing || gen != _reconnectGeneration) return;
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (_closing || gen != _reconnectGeneration) return;
+                    TryLoadOnce();
+                });
             }
-            catch (TaskCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                // normal
+            }
         });
     }
 
@@ -1994,13 +2074,32 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // Orderly teardown before visual tree teardown (prevents late mpv/BBS callbacks)
+        _closing = true;
+        _reconnectGeneration++;
+        try { _retryCts?.Cancel(); } catch { /* ignore */ }
+        try { _statsTimer?.Stop(); } catch { /* ignore */ }
+        try { _channelTimer?.Stop(); } catch { /* ignore */ }
+        try { _pointerTimer?.Stop(); } catch { /* ignore */ }
+        try { _fsChromeTimer?.Stop(); } catch { /* ignore */ }
+        try { _bbsPoller?.Stop(); } catch { /* ignore */ }
+        try { _videoChrome?.HideChrome(); } catch { /* ignore */ }
+        try { _player?.Stop(); } catch { /* ignore */ }
+    }
+
     private void Window_Closed(object? sender, EventArgs e)
     {
         WriteLog("---- close ----");
+        _closing = true;
+
         try { _statsTimer?.Stop(); } catch { }
         try { _channelTimer?.Stop(); } catch { }
         try { _pointerTimer?.Stop(); } catch { }
         try { _fsChromeTimer?.Stop(); } catch { }
+        try { Mouse.OverrideCursor = null; } catch { }
+
         try
         {
             if (_videoChrome is not null)
@@ -2011,24 +2110,45 @@ public partial class MainWindow : Window
             }
         }
         catch { }
-        try { Mouse.OverrideCursor = null; } catch { }
+
         try { _sizingHook?.Dispose(); } catch { }
+        _sizingHook = null;
 
         if (_commentVisible && CommentColumn.Width.IsAbsolute && CommentColumn.Width.Value > 120)
             _settings.CommentPanelWidth = CommentColumn.Width.Value;
         _settings.CommentPanelVisible = _commentVisible;
-        SaveWindowPlacement();
-        _settings.Save();
+        try
+        {
+            SaveWindowPlacement();
+            _settings.Save();
+        }
+        catch { /* ignore */ }
 
         try { _retryCts?.Cancel(); } catch { }
+        try { _retryCts?.Dispose(); } catch { }
+        _retryCts = null;
+
         try { _bbsPoller?.Dispose(); } catch { }
-        try { _player?.Stop(); } catch { }
+        _bbsPoller = null;
+
         try { _bbsWriter.Dispose(); } catch { }
 
-        _player?.Dispose();
+        try
+        {
+            if (_player is not null)
+            {
+                _player.FileLoaded -= OnPlayerFileLoaded;
+                _player.EndFile -= OnPlayerEndFile;
+                _player.Stop();
+                _player.Dispose();
+            }
+        }
+        catch { }
         _player = null;
-        _bbsPoller = null;
-        _retryCts?.Dispose();
+        _playerReady = false;
+
+        try { _statsTimer = null; _channelTimer = null; _pointerTimer = null; _fsChromeTimer = null; }
+        catch { /* ignore */ }
     }
 
     private void WriteLog(string message)
