@@ -23,12 +23,12 @@ public sealed class VideoChromeOverlay : Form
     public const int HotHeight = 44;
 
     // WinForms Form/Button BackColor must be opaque (no alpha) — throws otherwise.
-    private static readonly Color BarColor = Color.FromArgb(0x1A, 0x1A, 0x1A);
-    private static readonly Color BtnHover = Color.FromArgb(0x3A, 0x3A, 0x3A);
-    private static readonly Color BtnPress = Color.FromArgb(0x4A, 0x4A, 0x4A);
-    private static readonly Color CloseHover = Color.FromArgb(0xE8, 0x11, 0x23);
-    private static readonly Color ClosePress = Color.FromArgb(0xC5, 0x0F, 0x1F);
-    private static readonly Color TextColor = Color.FromArgb(0xE0, 0xE0, 0xE0);
+    private Color _barColor = Color.FromArgb(0x1A, 0x1A, 0x1A);
+    private Color _btnHover = Color.FromArgb(0x3A, 0x3A, 0x3A);
+    private Color _btnPress = Color.FromArgb(0x4A, 0x4A, 0x4A);
+    private Color _closeHover = Color.FromArgb(0xE8, 0x11, 0x23);
+    private Color _closePress = Color.FromArgb(0xC5, 0x0F, 0x1F);
+    private Color _textColor = Color.FromArgb(0xE0, 0xE0, 0xE0);
 
     private const int WsExToolwindow = 0x00000080;
     private const int WsExNoactivate = 0x08000000;
@@ -56,8 +56,8 @@ public sealed class VideoChromeOverlay : Form
         MinimizeBox = false;
         ControlBox = false;
         TopMost = false;
-        BackColor = BarColor;
-        ForeColor = TextColor;
+        BackColor = _barColor;
+        ForeColor = _textColor;
         Size = new Size(ButtonWidth * 3, BarHeight);
         AutoScaleMode = AutoScaleMode.None;
         SetStyle(ControlStyles.Selectable, false);
@@ -102,6 +102,42 @@ public sealed class VideoChromeOverlay : Form
         if (IsDisposed) return;
         _max.Text = restored ? "❐" : "□";
         _max.AccessibleName = restored ? "元のサイズに戻す" : "最大化";
+    }
+
+    /// <summary>Apply opaque palette (Grok / Classic chrome).</summary>
+    public void ApplyTheme(
+        byte barR, byte barG, byte barB,
+        byte hoverR, byte hoverG, byte hoverB,
+        byte pressR, byte pressG, byte pressB,
+        byte textR, byte textG, byte textB)
+    {
+        if (IsDisposed) return;
+        _barColor = Color.FromArgb(barR, barG, barB);
+        _btnHover = Color.FromArgb(hoverR, hoverG, hoverB);
+        _btnPress = Color.FromArgb(pressR, pressG, pressB);
+        _textColor = Color.FromArgb(textR, textG, textB);
+        BackColor = _barColor;
+        ForeColor = _textColor;
+        StyleButton(_min, isClose: false);
+        StyleButton(_max, isClose: false);
+        StyleButton(_close, isClose: true);
+        try { Invalidate(true); } catch { /* ignore */ }
+    }
+
+    private void StyleButton(Button b, bool isClose)
+    {
+        b.BackColor = _barColor;
+        b.ForeColor = _textColor;
+        if (isClose)
+        {
+            b.FlatAppearance.MouseOverBackColor = _closeHover;
+            b.FlatAppearance.MouseDownBackColor = _closePress;
+        }
+        else
+        {
+            b.FlatAppearance.MouseOverBackColor = _btnHover;
+            b.FlatAppearance.MouseDownBackColor = _btnPress;
+        }
     }
 
     public void Attach(IWin32Window owner, Control videoPanel)
@@ -223,14 +259,14 @@ public sealed class VideoChromeOverlay : Form
         _close.SetBounds(ButtonWidth * 2, 0, ButtonWidth, BarHeight);
     }
 
-    private static Button MakeButton(string text, string tip, bool isClose)
+    private Button MakeButton(string text, string tip, bool isClose)
     {
         var b = new Button
         {
             Text = text,
             FlatStyle = FlatStyle.Flat,
-            BackColor = BarColor,
-            ForeColor = TextColor,
+            BackColor = _barColor,
+            ForeColor = _textColor,
             Font = new Font("Segoe UI Symbol", 9f, FontStyle.Regular),
             TabStop = false,
             Cursor = Cursors.Arrow,
@@ -239,17 +275,11 @@ public sealed class VideoChromeOverlay : Form
             UseVisualStyleBackColor = false,
         };
         b.FlatAppearance.BorderSize = 0;
+        StyleButton(b, isClose);
         if (isClose)
         {
-            b.FlatAppearance.MouseOverBackColor = CloseHover;
-            b.FlatAppearance.MouseDownBackColor = ClosePress;
             b.MouseEnter += (_, _) => b.ForeColor = Color.White;
-            b.MouseLeave += (_, _) => b.ForeColor = TextColor;
-        }
-        else
-        {
-            b.FlatAppearance.MouseOverBackColor = BtnHover;
-            b.FlatAppearance.MouseDownBackColor = BtnPress;
+            b.MouseLeave += (_, _) => b.ForeColor = _textColor;
         }
 
         var tt = new ToolTip { ShowAlways = false, AutoPopDelay = 2000 };
@@ -259,14 +289,14 @@ public sealed class VideoChromeOverlay : Form
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        using var br = new SolidBrush(BarColor);
+        using var br = new SolidBrush(_barColor);
         e.Graphics.FillRectangle(br, ClientRectangle);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.None;
-        using (var br = new SolidBrush(BarColor))
+        using (var br = new SolidBrush(_barColor))
             e.Graphics.FillRectangle(br, ClientRectangle);
         // subtle bottom edge
         using (var pen = new Pen(Color.FromArgb(0xFF, 0x33, 0x33, 0x33)))

@@ -33,7 +33,7 @@ public sealed class FsChromeOverlay : Form
     private const uint SwpShowwindow = 0x0040;
     private const uint SwpHidewindow = 0x0080;
 
-    private static readonly Color BarColor = Color.FromArgb(0x1A, 0x1A, 0x1A);
+    private Color _barColor = Color.FromArgb(0x1A, 0x1A, 0x1A);
 
     // Write(~36-40) + Info(~28-32) + multi-line write up to ~120 → hard cap
     private const int MinContentPx = 56;
@@ -60,6 +60,21 @@ public sealed class FsChromeOverlay : Form
 
     public WpfControls.StackPanel Panel => _panel;
 
+    /// <summary>Match FS float strip to app chrome (opaque).</summary>
+    public void ApplyTheme(byte r, byte g, byte b)
+    {
+        if (IsDisposed) return;
+        _barColor = Color.FromArgb(r, g, b);
+        BackColor = _barColor;
+        try { _host.BackColor = _barColor; } catch { /* ignore */ }
+        try
+        {
+            _panel.Background = new WpfMedia.SolidColorBrush(
+                WpfMedia.Color.FromRgb(r, g, b));
+        }
+        catch { /* ignore */ }
+    }
+
     public FsChromeOverlay()
     {
         FormBorderStyle = FormBorderStyle.None;
@@ -69,7 +84,7 @@ public sealed class FsChromeOverlay : Form
         MinimizeBox = false;
         ControlBox = false;
         TopMost = false;
-        BackColor = BarColor;
+        BackColor = _barColor;
         AutoScaleMode = AutoScaleMode.None;
         AutoSize = false;
         Size = new System.Drawing.Size(640, 72);
@@ -87,7 +102,7 @@ public sealed class FsChromeOverlay : Form
         {
             Dock = DockStyle.Fill,
             Child = _panel,
-            BackColor = BarColor,
+            BackColor = _barColor,
             AutoSize = false
         };
         Controls.Add(_host);

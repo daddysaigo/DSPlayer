@@ -17,6 +17,7 @@ using NewPCRPlayer.Services;
 using NewPCRPlayer.Services.Bbs;
 using NewPCRPlayer.Services.Mpv;
 using NewPCRPlayer.Services.PeerCast;
+using NewPCRPlayer.Themes;
 using WinForms = System.Windows.Forms;
 
 namespace NewPCRPlayer;
@@ -94,6 +95,10 @@ public partial class MainWindow : Window
     private bool _fsChromeFloating;
     private FsChromeOverlay? _fsChromeOverlay;
 
+    // Comment list: middle-click autoscroll mode (browser-style: click once, move to scroll)
+    private bool _commentAutoScroll;
+    private System.Windows.Point _commentAutoScrollOrigin; // relative to ScrollViewer
+
     // Write-box multi-line: freeze content row (video+comments) in pixels; only window grows down
     private bool _contentRowFrozen;
     private double _frozenContentHeight;
@@ -169,8 +174,12 @@ public partial class MainWindow : Window
         CommentList.AddHandler(
             AnchorBodyBlock.AnchorClickEvent,
             new EventHandler<AnchorClickEventArgs>(CommentList_AnchorClick));
+        // Middle-click autoscroll: click once → move to scroll → click again / LMB to exit
+        CommentList.PreviewMouseDown += CommentList_AutoScroll_PreviewMouseDown;
+        PreviewKeyDown += CommentList_AutoScroll_PreviewKeyDown;
         ApplyCommentPanelSettings();
         ApplyCommentFont();
+        ApplyUiTheme(); // chrome + always ends with ApplyCommentListTheme()
         ApplySavedWindowPlacement();
         RefreshStatusBar();
 
@@ -242,6 +251,17 @@ public partial class MainWindow : Window
 
         // Owned tool window: follows parent, paints ABOVE HwndHost/mpv (airspace fix)
         _videoChrome.Attach(new Win32WindowHandle(hwnd), PlayerPanel);
+        // Re-apply chrome colors (overlay may be created after first ApplyUiTheme)
+        try
+        {
+            var t = UiTheme.FromId(_settings.UiTheme);
+            _videoChrome.ApplyTheme(
+                t.ChromeBarR, t.ChromeBarG, t.ChromeBarB,
+                t.ChromeHoverR, t.ChromeHoverG, t.ChromeHoverB,
+                t.ChromePressR, t.ChromePressG, t.ChromePressB,
+                t.ChromeTextR, t.ChromeTextG, t.ChromeTextB);
+        }
+        catch { /* ignore */ }
         UpdateMaximizeButtonGlyph();
         WriteLog("video chrome overlay attached (owned tool window over video)");
     }
@@ -461,6 +481,13 @@ public partial class MainWindow : Window
 
     private void PointerInteractionTick()
     {
+        // Browser-style comment autoscroll: keep ScrollNS and scroll by pointer offset
+        if (_commentAutoScroll)
+        {
+            TickCommentAutoScroll();
+            return;
+        }
+
         if (!IsVisible || WindowState == WindowState.Minimized ||
             _settingsDialogOpen || (ContextMenu?.IsOpen == true) || ThreadPopup.IsOpen)
         {
@@ -554,6 +581,7 @@ public partial class MainWindow : Window
 
     private void ClearPointerCursorState()
     {
+        if (_commentAutoScroll) return;
         if (Mouse.OverrideCursor is not null)
             Mouse.OverrideCursor = null;
         _lbuttonWasDown = false;
@@ -1518,9 +1546,30 @@ public partial class MainWindow : Window
 
     private void CopySelectedComments()
     {
+        // Prefer in-body / header text selection (Grok: select-copy body, not card)
         if (Keyboard.FocusedElement is System.Windows.Controls.TextBox tb && tb.SelectionLength > 0)
         {
             try { System.Windows.Clipboard.SetText(tb.SelectedText); return; }
+            catch { /* ignore */ }
+        }
+
+        if (Keyboard.FocusedElement is System.Windows.Controls.RichTextBox rtb)
+        {
+            try
+            {
+                var t = rtb.Selection?.Text ?? "";
+                if (!string.IsNullOrEmpty(t))
+                {
+                    System.Windows.Clipboard.SetText(t);
+                    return;
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        if (Keyboard.FocusedElement is AnchorBodyBlock body && !string.IsNullOrEmpty(body.SelectedText))
+        {
+            try { System.Windows.Clipboard.SetText(body.SelectedText); return; }
             catch { /* ignore */ }
         }
 
@@ -1965,11 +2014,21 @@ public partial class MainWindow : Window
         }
 
         _settingsDialogOpen = true;
+        EndCommentAutoScroll();
         ClearPointerCursorState();
 
         try
         {
-            var dlg = new SettingsWindow(_settings)
+            // Snapshot for Cancel → full revert
+            var snapshotJson = AppSettings.SerializeSnapshot(_settings);
+
+            var dlg = new SettingsWindow(
+                _settings,
+                onLiveApply: () =>
+                {
+                    try { ApplySettingsLive(restartBbs: false); }
+                    catch (Exception ex) { WriteLog("settings live: " + ex.Message); }
+                })
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ShowInTaskbar = true,
@@ -1980,7 +2039,13 @@ public partial class MainWindow : Window
             if (ok)
             {
                 _settings.Save();
-                ApplySettingsLive();
+                ApplySettingsLive(restartBbs: true);
+            }
+            else
+            {
+                // Revert in-memory settings + UI
+                AppSettings.RestoreSnapshot(_settings, snapshotJson);
+                ApplySettingsLive(restartBbs: true);
             }
         }
         catch (Exception ex)
@@ -2001,23 +2066,138 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Apply settings that can take effect without full process restart.</summary>
-    private void ApplySettingsLive()
+    /// <param name="restartBbs">
+    /// Restart poller for interval/normalize. Skip during live-preview typing to avoid spam.
+    /// </param>
+    private void ApplySettingsLive(bool restartBbs = true)
     {
         ApplyCommentFont();
+        ApplyUiTheme(); // includes ApplyCommentListTheme at end
+        ApplyCommentListTheme();
         RefreshAllCommentHeaders();
         RefreshStatusBar();
-        WriteLog("settings applied: header=" + _settings.CommentHeaderFontFamily +
+        WriteLog("settings applied: ui=" + _settings.UiTheme +
+                 " comments=" + _settings.CommentListTheme +
+                 " header=" + _settings.CommentHeaderFontFamily +
                  "/" + _settings.CommentHeaderFontSize +
                  " body=" + _settings.CommentBodyFontFamily +
                  "/" + _settings.CommentBodyFontSize +
                  " interval=" + _settings.BbsIntervalSeconds +
                  " normalize=" + _settings.MessageNormalize);
 
-        // Restart BBS poller so interval / message normalize take effect immediately.
-        if (!string.IsNullOrWhiteSpace(_contactUrl) || _launchArgs.HasContact)
+        if (restartBbs &&
+            (!string.IsNullOrWhiteSpace(_contactUrl) || _launchArgs.HasContact))
         {
             _ = RestartBbsAfterSettingsAsync();
         }
+    }
+
+    // --- Comment middle-click autoscroll (browser-style: click, move, click again) ---
+
+    private void CommentList_AutoScroll_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // Exit on left/right click while in mode
+        if (_commentAutoScroll && e.ChangedButton is MouseButton.Left or MouseButton.Right)
+        {
+            EndCommentAutoScroll();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.ChangedButton != MouseButton.Middle) return;
+
+        // Toggle: second middle-click exits
+        if (_commentAutoScroll)
+        {
+            EndCommentAutoScroll();
+            e.Handled = true;
+            return;
+        }
+
+        var sv = FindDescendantScrollViewer(CommentList);
+        if (sv is null) return;
+
+        StartCommentAutoScroll(e.GetPosition(sv));
+        e.Handled = true;
+    }
+
+    private void CommentList_AutoScroll_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (!_commentAutoScroll) return;
+        if (e.Key == Key.Escape)
+        {
+            EndCommentAutoScroll();
+            e.Handled = true;
+        }
+    }
+
+    private void StartCommentAutoScroll(System.Windows.Point originInScrollViewer)
+    {
+        _commentAutoScroll = true;
+        _commentAutoScrollOrigin = originInScrollViewer;
+        try { Mouse.OverrideCursor = System.Windows.Input.Cursors.ScrollNS; } catch { /* ignore */ }
+        // Capture on the list so moves outside items still count (release on exit)
+        try { CommentList.CaptureMouse(); } catch { /* ignore */ }
+        WriteLog("comment autoscroll: on");
+    }
+
+    private void TickCommentAutoScroll()
+    {
+        if (!_commentAutoScroll) return;
+
+        // Keep cursor in scroll mode (pointer poll is skipped while active)
+        try
+        {
+            if (!ReferenceEquals(Mouse.OverrideCursor, System.Windows.Input.Cursors.ScrollNS))
+                Mouse.OverrideCursor = System.Windows.Input.Cursors.ScrollNS;
+        }
+        catch { /* ignore */ }
+
+        var sv = FindDescendantScrollViewer(CommentList);
+        if (sv is null)
+        {
+            EndCommentAutoScroll();
+            return;
+        }
+
+        System.Windows.Point pos;
+        try { pos = Mouse.GetPosition(sv); }
+        catch { return; }
+
+        var dy = pos.Y - _commentAutoScrollOrigin.Y;
+        const double deadZone = 8; // px — no scroll near origin
+        if (Math.Abs(dy) <= deadZone)
+            return;
+
+        // Distance beyond dead-zone → speed (px per ~16ms tick). Cap for control.
+        var dist = Math.Abs(dy) - deadZone;
+        var speed = Math.Min(48, 0.35 * dist + 0.8 * (dist * dist) / 80);
+        if (dy < 0) speed = -speed; // pointer above origin → scroll up
+
+        var target = sv.VerticalOffset + speed;
+        target = Math.Clamp(target, 0, Math.Max(0, sv.ScrollableHeight));
+        if (Math.Abs(target - sv.VerticalOffset) >= 0.5)
+            sv.ScrollToVerticalOffset(target);
+    }
+
+    private void EndCommentAutoScroll()
+    {
+        if (!_commentAutoScroll) return;
+        _commentAutoScroll = false;
+        try
+        {
+            if (CommentList.IsMouseCaptured)
+                CommentList.ReleaseMouseCapture();
+        }
+        catch { /* ignore */ }
+        try
+        {
+            if (ReferenceEquals(Mouse.OverrideCursor, System.Windows.Input.Cursors.ScrollNS) ||
+                Mouse.OverrideCursor is not null)
+                Mouse.OverrideCursor = null;
+        }
+        catch { /* ignore */ }
+        WriteLog("comment autoscroll: off");
     }
 
     private void ApplyCommentFont()
@@ -2034,20 +2214,208 @@ public partial class MainWindow : Window
                     : _settings.CommentBodyFontFamily.Trim());
             var headerSize = Math.Clamp(_settings.CommentHeaderFontSize, 8, 36);
             var bodySize = Math.Clamp(_settings.CommentBodyFontSize, 8, 36);
+            var headerWeight = ParseFontWeight(_settings.CommentHeaderFontWeight, FontWeights.Normal);
+            var bodyWeight = ParseFontWeight(_settings.CommentBodyFontWeight, FontWeights.Normal);
+            var headerFg = ParseBrush(_settings.CommentHeaderColor, "#888888");
+            var bodyFg = ParseBrush(_settings.CommentBodyColor, "#111111");
 
-            // DynamicResource keys used by comment ItemTemplate (A/B fonts)
+            // DynamicResource keys used by comment ItemTemplate (A/B style)
             CommentList.Resources["HeaderFontFamily"] = headerFamily;
             CommentList.Resources["HeaderFontSize"] = headerSize;
+            CommentList.Resources["HeaderFontWeight"] = headerWeight;
+            CommentList.Resources["HeaderForeground"] = headerFg;
             CommentList.Resources["BodyFontFamily"] = bodyFamily;
             CommentList.Resources["BodyFontSize"] = bodySize;
+            CommentList.Resources["BodyFontWeight"] = bodyWeight;
+            CommentList.Resources["BodyForeground"] = bodyFg;
 
             CommentList.FontFamily = bodyFamily;
             CommentList.FontSize = bodySize;
+            CommentList.FontWeight = bodyWeight;
             // WriteBox のフォント/高さロジックは触らない（改行で伸びる仕様を維持）
         }
         catch (Exception ex)
         {
             WriteLog("font apply: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// App-wide Classic / Grok skin: window chrome, write/status bars, comments, overlays.
+    /// </summary>
+    private void ApplyUiTheme()
+    {
+        try
+        {
+            var t = UiTheme.FromId(_settings.UiTheme);
+
+            Background = t.Brush(t.WindowBg);
+            RootLayoutGrid.Background = t.Brush(t.WindowBg);
+
+            WriteBar.Background = t.Brush(t.WriteBarBg);
+            WriteBar.BorderBrush = t.Brush(t.WriteBarBorder);
+            BoardTitleText.Foreground = t.Brush(t.WriteBarMuted);
+
+            WriteBox.Background = t.Brush(t.InputBg);
+            WriteBox.Foreground = t.Brush(t.InputFg);
+            WriteBox.BorderBrush = t.Brush(t.InputBorder);
+            WriteBox.CaretBrush = t.Brush(t.InputFg);
+
+            WriteButton.Background = t.Brush(t.ButtonBg);
+            WriteButton.Foreground = t.Brush(t.ButtonFg);
+            WriteButton.BorderBrush = t.Brush(t.ButtonBorder);
+            WriteButton.BorderThickness = new Thickness(t.IsGrok ? 0 : 1);
+            try
+            {
+                if (t.IsGrok)
+                {
+                    WriteButton.Padding = new Thickness(4, 2, 4, 2);
+                    WriteButton.FontWeight = FontWeights.SemiBold;
+                    WriteButton.Template = CreateFlatButtonTemplate(t.ButtonBg, t.ButtonFg, t.ButtonBorder);
+                }
+                else
+                {
+                    WriteButton.ClearValue(System.Windows.Controls.Control.TemplateProperty);
+                    WriteButton.FontWeight = FontWeights.Normal;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("write button theme: " + ex.Message);
+                try { WriteButton.ClearValue(System.Windows.Controls.Control.TemplateProperty); } catch { /* ignore */ }
+            }
+
+            InfoBar.Background = t.Brush(t.StatusBg);
+            StatusText.Foreground = t.Brush(t.StatusFg);
+            VolumeText.Foreground = t.Brush(t.StatusFg);
+            RightStatsText.Foreground = t.Brush(t.StatusMuted);
+
+            CommentSplitter.Background = t.Brush(t.Splitter);
+
+            // Application-level brushes (settings dialog / status StaticResource consumers)
+            try
+            {
+                if (System.Windows.Application.Current?.Resources is { } appRes)
+                {
+                    appRes["WindowBackgroundBrush"] = t.Brush(t.WindowBg);
+                    appRes["StatusBarBrush"] = t.Brush(t.StatusBg);
+                    appRes["ForegroundBrush"] = t.Brush(t.StatusFg);
+                }
+            }
+            catch { /* ignore */ }
+
+            _videoChrome?.ApplyTheme(
+                t.ChromeBarR, t.ChromeBarG, t.ChromeBarB,
+                t.ChromeHoverR, t.ChromeHoverG, t.ChromeHoverB,
+                t.ChromePressR, t.ChromePressG, t.ChromePressB,
+                t.ChromeTextR, t.ChromeTextG, t.ChromeTextB);
+
+            _fsChromeOverlay?.ApplyTheme(t.ChromeBarR, t.ChromeBarG, t.ChromeBarB);
+        }
+        catch (Exception ex)
+        {
+            WriteLog("ui theme: " + ex.Message);
+        }
+
+        // Always apply comment theme separately — must not depend on chrome template success
+        ApplyCommentListTheme();
+    }
+
+    private static ControlTemplate CreateFlatButtonTemplate(
+        System.Windows.Media.Color bg, System.Windows.Media.Color fg, System.Windows.Media.Color border)
+    {
+        // No x: prefix (avoids undeclared xmlns:x). Colors as #AARRGGBB.
+        var bgHex = $"#FF{bg.R:X2}{bg.G:X2}{bg.B:X2}";
+        var bdHex = $"#FF{border.R:X2}{border.G:X2}{border.B:X2}";
+        var xaml =
+            "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>" +
+            "<Border Name='Bd' Background='" + bgHex + "' BorderBrush='" + bdHex +
+            "' BorderThickness='1' CornerRadius='6' Padding='{TemplateBinding Padding}'>" +
+            "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>" +
+            "</Border>" +
+            "<ControlTemplate.Triggers>" +
+            "<Trigger Property='IsMouseOver' Value='True'>" +
+            "<Setter TargetName='Bd' Property='Opacity' Value='0.92'/>" +
+            "</Trigger>" +
+            "<Trigger Property='IsPressed' Value='True'>" +
+            "<Setter TargetName='Bd' Property='Opacity' Value='0.85'/>" +
+            "</Trigger>" +
+            "</ControlTemplate.Triggers>" +
+            "</ControlTemplate>";
+        return (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
+    }
+
+    /// <summary>
+    /// Comment list layout only (Classic flat / Grok cards). Independent of chrome <see cref="UiTheme"/>.
+    /// </summary>
+    private void ApplyCommentListTheme()
+    {
+        try
+        {
+            var grok = string.Equals(_settings.CommentListTheme, "Grok", StringComparison.OrdinalIgnoreCase);
+            if (grok)
+            {
+                // Card paper panel (same palette as Grok comment style)
+                CommentPanel.Background = ParseBrush("#F3EFE8", "#F3EFE8");
+                CommentPanel.BorderBrush = ParseBrush("#D8D2C8", "#D8D2C8");
+                CommentList.Padding = new Thickness(0, 8, 0, 8);
+                CommentList.ItemContainerStyle = (Style)FindResource("CommentItemStyleGrok");
+                CommentList.ItemTemplate = (DataTemplate)FindResource("CommentItemTemplateGrok");
+                CommentList.SelectionMode = System.Windows.Controls.SelectionMode.Single;
+                CommentList.SelectedIndex = -1;
+            }
+            else
+            {
+                CommentPanel.Background = ParseBrush("#F0F0F0", "#F0F0F0");
+                CommentPanel.BorderBrush = ParseBrush("#D0D0D0", "#D0D0D0");
+                CommentList.Padding = new Thickness(4, 0, 4, 0);
+                CommentList.ItemContainerStyle = (Style)FindResource("CommentItemStyleClassic");
+                CommentList.ItemTemplate = (DataTemplate)FindResource("CommentItemTemplateClassic");
+                CommentList.SelectionMode = System.Windows.Controls.SelectionMode.Extended;
+            }
+
+            // Force container recycle so style swap paints immediately
+            var src = CommentList.ItemsSource;
+            CommentList.ItemsSource = null;
+            CommentList.ItemsSource = src;
+            WriteLog("comment list theme: " + (grok ? "Grok" : "Classic"));
+        }
+        catch (Exception ex)
+        {
+            WriteLog("comment theme: " + ex.Message);
+        }
+    }
+
+    private static FontWeight ParseFontWeight(string? name, FontWeight fallback)
+    {
+        return (name ?? "").Trim().ToLowerInvariant() switch
+        {
+            "thin" or "ultralight" or "extralight" or "light" => FontWeights.Light,
+            "normal" or "regular" => FontWeights.Normal,
+            "medium" => FontWeights.Medium,
+            "semibold" or "demibold" => FontWeights.SemiBold,
+            "bold" => FontWeights.Bold,
+            "extrabold" or "ultrabold" or "black" or "heavy" => FontWeights.Bold,
+            _ => fallback,
+        };
+    }
+
+    private static System.Windows.Media.SolidColorBrush ParseBrush(string? hex, string fallbackHex)
+    {
+        try
+        {
+            var c = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
+                string.IsNullOrWhiteSpace(hex) ? fallbackHex : hex.Trim())!;
+            var b = new System.Windows.Media.SolidColorBrush(c);
+            if (b.CanFreeze) b.Freeze();
+            return b;
+        }
+        catch
+        {
+            var c = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(fallbackHex)!;
+            var b = new System.Windows.Media.SolidColorBrush(c);
+            if (b.CanFreeze) b.Freeze();
+            return b;
         }
     }
 
@@ -2274,6 +2642,12 @@ public partial class MainWindow : Window
         if (_fsChromeOverlay is not null && !_fsChromeOverlay.IsDisposed)
             return;
         _fsChromeOverlay = new FsChromeOverlay();
+        try
+        {
+            var t = UiTheme.FromId(_settings.UiTheme);
+            _fsChromeOverlay.ApplyTheme(t.ChromeBarR, t.ChromeBarG, t.ChromeBarB);
+        }
+        catch { /* ignore */ }
     }
 
     private void SetFullscreenChromeVisible(bool visible)
