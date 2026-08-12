@@ -52,12 +52,12 @@
     </Window.ContextMenu>
 
     <!-- No outer chrome border (user preference: edge-to-edge) -->
-    <Grid Background="{StaticResource WindowBackgroundBrush}">
+    <Grid x:Name="RootLayoutGrid" Background="{StaticResource WindowBackgroundBrush}">
             <Grid.RowDefinitions>
                 <!-- Pixel-locked while write box is multi-line so video never resizes with Enter -->
                 <RowDefinition x:Name="ContentRow" Height="*"/>
                 <RowDefinition x:Name="WriteBarRow" Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition x:Name="InfoBarRow" Height="Auto"/>
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0" x:Name="MainSplitGrid">

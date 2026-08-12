@@ -50,7 +50,9 @@ public sealed class MpvPlayerHost : IDisposable
             // Prefer GPU; fall back paths handled by mpv
             SetOption("vo", "gpu");
             SetOption("hwdec", "auto-safe");
-            SetOption("keep-open", "yes");
+            // Live PeerCast: do NOT keep-open on EOF (would freeze last frame without end-file recovery path).
+            // idle=yes so after stop we can loadfile again cleanly.
+            SetOption("keep-open", "no");
             SetOption("idle", "yes");
             SetOption("osc", "no");
             SetOption("input-default-bindings", "no");
@@ -72,11 +74,19 @@ public sealed class MpvPlayerHost : IDisposable
 
             // PeerCast: live FLV over HTTP. Avoid aggressive low-latency profile
             // (it sets demuxer-lavf-probe-info=nostreams which breaks some FLV).
+            // Live PeerCast: modest forward demuxer cap; no backward/seek cache (no rewind).
+            // Caps are maxima, not reserved — limits growth vs default large back-buffer.
             SetOption("cache", "yes");
-            SetOption("demuxer-max-bytes", "50MiB");
-            SetOption("demuxer-readahead-secs", "3");
-            SetOption("network-timeout", "30");
-            SetOption("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5,fflags=+genpts");
+            SetOption("demuxer-max-bytes", "8MiB");
+            SetOption("demuxer-max-back-bytes", "0");
+            SetOption("demuxer-readahead-secs", "1.5");
+            SetOption("demuxer-seekable-cache", "no");
+            SetOption("demuxer-donate-buffer", "no");
+            // Fail faster so the app can reconnect (PCRPlayer-like) instead of hanging on a dead socket.
+            SetOption("network-timeout", "8");
+            // Do NOT let lavf silently reconnect for a long time — frozen last-frame with no end-file.
+            // App-level reconnect (MainWindow) owns retries for live streams.
+            SetOption("stream-lavf-o", "fflags=+genpts");
 
             // Probe enough to detect FLV/H.264 from PeerCast
             SetOption("demuxer-lavf-probesize", "65536");
@@ -243,6 +253,63 @@ public sealed class MpvPlayerHost : IDisposable
     }
 
     public double? GetTimePos() => GetPropertyDouble("time-pos");
+
+    /// <summary>
+    /// Recently received bitrate in kbps (video+audio packet rate preferred).
+    /// Null when nothing is flowing (idle / stalled / not playing).
+    /// </summary>
+    public int? GetReceivedBitrateKbps()
+    {
+        // packet-* = recent actual flow (best for live). track bitrates = nominal/estimated.
+        var v = GetPropertyDouble("packet-video-bitrate")
+                ?? GetPropertyDouble("video-bitrate");
+        var a = GetPropertyDouble("packet-audio-bitrate")
+                ?? GetPropertyDouble("audio-bitrate");
+
+        double bps = 0;
+        if (v is > 0) bps += v.Value;
+        if (a is > 0) bps += a.Value;
+
+        if (bps <= 0)
+        {
+            // cache-speed is bytes/sec when demuxer is pulling network data
+            var cacheSpeed = GetPropertyDouble("cache-speed");
+            if (cacheSpeed is > 0)
+                bps = cacheSpeed.Value * 8.0;
+        }
+
+        if (bps <= 0)
+            return null;
+
+        return Math.Max(0, (int)Math.Round(bps / 1000.0));
+    }
+
+    /// <summary>True when mpv has nothing to play (idle / finished / stopped).</summary>
+    public bool IsCoreIdle()
+    {
+        var s = GetProperty("core-idle");
+        return string.Equals(s, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public bool IsEofReached()
+    {
+        var s = GetProperty("eof-reached");
+        return string.Equals(s, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public bool IsPausedForCache()
+    {
+        var s = GetProperty("paused-for-cache");
+        return string.Equals(s, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Stop current file without quitting mpv (triggers end-file reason=stop).</summary>
+    public void StopCurrentFile()
+    {
+        if (_handle == IntPtr.Zero) return;
+        try { Command("stop"); }
+        catch (Exception ex) { Log?.Invoke(this, "stop: " + ex.Message); }
+    }
 
     private void SetOption(string name, string value)
     {

@@ -53,12 +53,21 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 | 右クリック | メニュー（設定・掲示板など） |
 | 書込 Shift+Enter | レス書き込み |
 | 書込 Enter | 改行（欄が下に伸びる） |
+| フルスクリーン下端ホバー | 書込欄・ステータスをフロート表示（動画サイズは不変） |
 
-設定: `%LOCALAPPDATA%\NewPCRPlayer\settings.json`
+設定: `%LOCALAPPDATA%\NewPCRPlayer\settings.json`  
+ログ: `%LOCALAPPDATA%\NewPCRPlayer\player.log`
 
 ## 開発フェーズ
 
 詳細は [docs/SPEC.md](docs/SPEC.md)。
 
 1. ~~調査~~ 〜 6. ~~コメント UI / 窓クローム~~
-7. **安定化・再接続・差し替え運用** ← いまここ
+7. **安定化・再接続・差し替え運用** — 実装済み、**実機受け入れ・チェックリスト消化が次**
+
+### いまの優先タスク
+
+1. 配信切断→再接続→再開の長時間確認
+2. 終了後プロセス残存なし
+3. [docs/PECARECORDER.md](docs/PECARECORDER.md) のチェックリスト消化
+4. （任意）FS 切替のさらなるスムーズ化 / メモリ無限増の追加調査

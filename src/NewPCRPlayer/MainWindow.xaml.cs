@@ -34,6 +34,16 @@ public partial class MainWindow : Window
     private int _reconnectGeneration;
     /// <summary>Soft cap for initial burst; live streams keep retrying beyond this with longer delay.</summary>
     private const int MaxLoadAttempts = 12;
+    /// <summary>True while a scheduled retry delay is outstanding (stall watchdog must not pile on).</summary>
+    private bool _reconnectPending;
+    /// <summary>When true, end-file from our own stop must not schedule another retry.</summary>
+    private bool _suppressEndFileRetry;
+    private double? _lastProgressTimePos;
+    private DateTime _lastPlaybackProgressUtc = DateTime.UtcNow;
+    /// <summary>Seconds without packet/time progress before forcing reconnect (live).</summary>
+    private const double StallReconnectSeconds = 8;
+    /// <summary>True after at least one file-loaded (stall watchdog only for live that was playing).</summary>
+    private bool _everStartedPlayback;
 
     private readonly ObservableCollection<CommentItem> _comments = new();
     /// <summary>
@@ -79,10 +89,10 @@ public partial class MainWindow : Window
     private bool _videoDragActive;
     private const int VideoDragThresholdPx = 5;
 
-    // Fullscreen: hide write/status bars; show on bottom hover
-    private DispatcherTimer? _fsChromeTimer;
-    private bool _fsChromeVisible = true;
-    private bool _fsChromePinned;
+    // Fullscreen: float write/status over video (owned WinForms HWND) — show/hide never resizes layout
+    private bool _fsChromeVisible;
+    private bool _fsChromeFloating;
+    private FsChromeOverlay? _fsChromeOverlay;
 
     // Write-box multi-line: freeze content row (video+comments) in pixels; only window grows down
     private bool _contentRowFrozen;
@@ -357,6 +367,10 @@ public partial class MainWindow : Window
 
     private double MeasureBottomChromeDip()
     {
+        // FS float chrome overlays video — does not consume layout height
+        if (_isFullscreen && _fsChromeFloating)
+            return 0;
+
         var writeH = WriteBar.Visibility == Visibility.Visible
             ? (WriteBar.ActualHeight > 0 ? WriteBar.ActualHeight : 36)
             : 0;
@@ -642,11 +656,13 @@ public partial class MainWindow : Window
 
     private void StartTimers()
     {
+        // ~1s like original PCRPlayer status refresh (bitrate / play time)
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statsTimer.Tick += (_, _) =>
         {
             if (_closing) return;
             UpdateVideoAspectFromMpv();
+            CheckLivePlaybackHealth();
             RefreshStatusBar();
         };
         _statsTimer.Start();
@@ -763,8 +779,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Status text from channel connection info (not user-toggled).
-    /// Same idea as original PCRPlayer status/channel fields.
+    /// Status text: channel metadata + <b>actual received</b> bitrate (not channel.xml advertised rate).
+    /// Bitrate refreshes every stats tick (~1s) so a frozen stream shows 0kbps quickly.
     /// </summary>
     private List<string> BuildLeftStatusParts()
     {
@@ -781,7 +797,18 @@ public partial class MainWindow : Window
         var comment = FirstNonEmpty(ch?.Comment);
         if (!string.IsNullOrWhiteSpace(comment)) parts.Add(comment!);
         if (ch is not null && ch.Listeners >= 0) parts.Add(ch.Listeners + " listeners");
-        if (ch is not null && ch.BitrateKbps > 0) parts.Add(ch.BitrateKbps + "kbps");
+
+        // Received bitrate (packet flow), not channel.xml BitrateKbps
+        if (_launchArgs.HasStream && _player is not null)
+        {
+            var recv = _player.GetReceivedBitrateKbps();
+            if (recv is > 0)
+                parts.Add(recv.Value + "kbps");
+            else if (!_reconnectPending)
+                parts.Add("0kbps");
+            // while reconnecting, left status often already says 再接続 — skip noisy 0kbps
+        }
+
         var fps = _player?.GetFps();
         if (fps is > 0.1)
             parts.Add(fps.Value.ToString("0.#", CultureInfo.InvariantCulture) + "fps");
@@ -1172,6 +1199,9 @@ public partial class MainWindow : Window
         if (_isFullscreen || WindowState != WindowState.Normal)
         {
             WriteBox.Height = targetHeight;
+            // FS float host sizes to content and sits on bottom — re-pin after multi-line grow
+            if (_fsChromeFloating)
+                _fsChromeOverlay?.SyncToMonitor();
             return;
         }
 
@@ -1535,10 +1565,14 @@ public partial class MainWindow : Window
             if (_closing) return;
             // Successful play: reset burst counter so later drops reconnect cleanly
             _loadAttempts = 0;
+            _reconnectPending = false;
+            _everStartedPlayback = true;
             _reconnectGeneration++;
             try { _retryCts?.Cancel(); } catch { /* ignore */ }
             _retryCts = new CancellationTokenSource();
             _playStartedUtc = DateTime.UtcNow;
+            _lastPlaybackProgressUtc = DateTime.UtcNow;
+            _lastProgressTimePos = null;
             _initialAspectApplied = false;
             UpdateVideoAspectFromMpv();
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
@@ -1566,13 +1600,15 @@ public partial class MainWindow : Window
         {
             if (_closing) return;
             WriteLog("end-file: " + args.Reason + " " + (args.ErrorMessage ?? ""));
-            // quit = intentional; ignore
+            // quit = intentional teardown
             if (string.Equals(args.Reason, "quit", StringComparison.OrdinalIgnoreCase))
                 return;
+            // Our ForceReconnect stop — retry already scheduled
+            if (_suppressEndFileRetry)
+                return;
 
-            // Live PeerCast: error / eof / stop / redirect → reconnect with backoff
-            if (args.IsError ||
-                args.Reason is "error" or "eof" or "stop" or "redirect")
+            // Live PeerCast: any natural end (eof/error/stop/redirect/…) → reconnect
+            if (_launchArgs.HasStream)
             {
                 StatusText.Text = "切断 — 再接続します…";
                 ScheduleRetry(liveContinuous: true);
@@ -1581,6 +1617,88 @@ public partial class MainWindow : Window
 
             RefreshStatusBar();
         });
+    }
+
+    /// <summary>
+    /// PeerCast often freezes the last frame without a clean end-file (half-open HTTP).
+    /// If time-pos / received bitrate stop advancing, force app-level reconnect.
+    /// </summary>
+    private void CheckLivePlaybackHealth()
+    {
+        if (_closing || _player is null || !_launchArgs.HasStream) return;
+        if (_reconnectPending || _suppressEndFileRetry) return;
+        // Only watch stalls after we have actually played once (initial connect uses end-file / load errors)
+        if (!_everStartedPlayback) return;
+
+        try
+        {
+            // User pause: do not treat as disconnect
+            var pauseProp = _player.GetProperty("pause");
+            if (string.Equals(pauseProp, "yes", StringComparison.OrdinalIgnoreCase)
+                && !_player.IsPausedForCache())
+            {
+                _lastPlaybackProgressUtc = DateTime.UtcNow;
+                return;
+            }
+
+            var recv = _player.GetReceivedBitrateKbps();
+            var timePos = _player.GetTimePos();
+            var idle = _player.IsCoreIdle();
+            var eof = _player.IsEofReached();
+            var buffering = _player.IsPausedForCache();
+
+            var progressed = false;
+            if (recv is > 0)
+                progressed = true;
+            if (timePos is double t)
+            {
+                if (_lastProgressTimePos is double prev && t > prev + 0.05)
+                    progressed = true;
+                _lastProgressTimePos = t;
+            }
+
+            if (progressed)
+            {
+                _lastPlaybackProgressUtc = DateTime.UtcNow;
+                return;
+            }
+
+            // Still buffering after connect — give it time (paused-for-cache is normal briefly)
+            if (buffering && (DateTime.UtcNow - _lastPlaybackProgressUtc).TotalSeconds < StallReconnectSeconds)
+                return;
+
+            var stalledFor = (DateTime.UtcNow - _lastPlaybackProgressUtc).TotalSeconds;
+            if (stalledFor < StallReconnectSeconds)
+                return;
+
+            // Idle/eof with no packets, or frozen last-frame with 0kbps for too long
+            if (idle || eof || recv is null or 0)
+            {
+                WriteLog($"stall watchdog: idle={idle} eof={eof} recv={recv?.ToString() ?? "null"} " +
+                         $"stalled={stalledFor:0.0}s → reconnect");
+                ForceReconnect("受信停止 — 再接続します…");
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteLog("playback health: " + ex.Message);
+        }
+    }
+
+    private void ForceReconnect(string statusMessage)
+    {
+        if (_closing || !_launchArgs.HasStream) return;
+        if (_reconnectPending) return;
+
+        StatusText.Text = statusMessage;
+        _suppressEndFileRetry = true;
+        try { _player?.StopCurrentFile(); }
+        catch { /* ignore */ }
+        finally { _suppressEndFileRetry = false; }
+
+        // Reset progress clock so we don't immediately re-trigger
+        _lastPlaybackProgressUtc = DateTime.UtcNow;
+        ScheduleRetry(liveContinuous: true);
     }
 
     private void ScheduleVideoChromeZOrderBoost()
@@ -1618,8 +1736,11 @@ public partial class MainWindow : Window
         _retryCts?.Dispose();
         _retryCts = new CancellationTokenSource();
         _loadAttempts = 0;
+        _reconnectPending = false;
         _reconnectGeneration++;
         _initialAspectApplied = false;
+        _lastPlaybackProgressUtc = DateTime.UtcNow;
+        _lastProgressTimePos = null;
         TryLoadOnce();
     }
 
@@ -1627,12 +1748,16 @@ public partial class MainWindow : Window
     {
         if (_closing || _player is null || !_launchArgs.HasStream) return;
         _loadAttempts++;
+        _reconnectPending = false; // attempt in flight (stall watchdog uses generation / pending flag)
+        _lastPlaybackProgressUtc = DateTime.UtcNow;
+        _lastProgressTimePos = null;
         var playUrl = ResolveAttemptUrl(_loadAttempts);
         WriteLog("loading attempt " + _loadAttempts + ": " + playUrl);
         try
         {
             StatusText.Text = _loadAttempts <= 1 ? "接続中…" : "再接続中… (" + _loadAttempts + ")";
-            _player.Load(playUrl);
+            // Replace current (dead) file and ensure unpaused
+            _player.Load(playUrl, play: true);
         }
         catch (Exception ex)
         {
@@ -1661,11 +1786,10 @@ public partial class MainWindow : Window
     {
         if (_closing) return;
 
-        if (_retryCts is null || _retryCts.IsCancellationRequested)
-        {
-            try { _retryCts?.Dispose(); } catch { /* ignore */ }
-            _retryCts = new CancellationTokenSource();
-        }
+        // Always cancel previous delay so we don't stack multiple reconnects
+        try { _retryCts?.Cancel(); } catch { /* ignore */ }
+        try { _retryCts?.Dispose(); } catch { /* ignore */ }
+        _retryCts = new CancellationTokenSource();
 
         var cts = _retryCts;
         var gen = _reconnectGeneration;
@@ -1674,18 +1798,21 @@ public partial class MainWindow : Window
         int delayMs;
         if (!liveContinuous && attempt >= MaxLoadAttempts)
         {
+            _reconnectPending = false;
             StatusText.Text = "接続に失敗しました";
             WriteLog("retry stopped after " + attempt + " attempts");
             return;
         }
 
+        // First retries quick (PCRPlayer-like); long-lived live drops back off up to 15s
         if (attempt <= MaxLoadAttempts)
-            delayMs = Math.Min(4000, 600 + attempt * 250);
+            delayMs = Math.Min(3000, 400 + attempt * 200);
         else
-            delayMs = Math.Min(30000, 4000 + (attempt - MaxLoadAttempts) * 1500);
+            delayMs = Math.Min(15000, 3000 + (attempt - MaxLoadAttempts) * 1000);
 
+        _reconnectPending = true;
         StatusText.Text = "再接続待機 " + (delayMs / 1000.0).ToString("0.#") + "s…";
-        WriteLog("schedule retry in " + delayMs + "ms (attempt=" + attempt + ")");
+        WriteLog("schedule retry in " + delayMs + "ms (attempt=" + attempt + ", gen=" + gen + ")");
 
         _ = Task.Run(async () =>
         {
@@ -1701,7 +1828,7 @@ public partial class MainWindow : Window
             }
             catch (OperationCanceledException)
             {
-                // normal
+                // normal — newer retry or file-loaded cancelled us
             }
         });
     }
@@ -1967,18 +2094,26 @@ public partial class MainWindow : Window
         _preFullscreenLeft = Left;
         _preFullscreenTop = Top;
         if (_sizingHook is not null) _sizingHook.Enabled = false;
+
+        // 本家寄り: 最大化の「前」にバーをレイアウトから外し、動画を先に全面化してから FS へ。
+        // （最大化後に外すと「バー付きFS → 一瞬で消えて動画が伸びる」になる）
+        _isFullscreen = true;
+        AttachFsChromeFloat();
+        SetFullscreenChromeVisible(false);
+        try { RootLayoutGrid.UpdateLayout(); } catch { /* ignore */ }
+
         WindowState = WindowState.Normal;
         WindowState = WindowState.Maximized;
-        _isFullscreen = true;
+
+        // Maximize 後もフロートは非表示のまま（Show はしない）
         SetFullscreenChromeVisible(false);
-        StartFsChromeWatch();
         UpdateMaximizeButtonGlyph();
+        WriteLog("fullscreen: chrome detached before maximize (no size pop)");
     }
 
     private void ExitFullscreen()
     {
-        StopFsChromeWatch();
-        SetFullscreenChromeVisible(true);
+        DetachFsChromeFloat();
         WindowState = WindowState.Normal;
         if (_preFullscreenWidth > 0) Width = _preFullscreenWidth;
         if (_preFullscreenHeight > 0) Height = _preFullscreenHeight;
@@ -1992,86 +2127,182 @@ public partial class MainWindow : Window
         UpdateMaximizeButtonGlyph();
     }
 
-    private void StartFsChromeWatch()
+    /// <summary>
+    /// FS only: move WriteBar+InfoBar into owned WinForms overlay (above mpv airspace).
+    /// Main grid bottom rows stay at height 0 for the whole FS session — hover never resizes video.
+    /// </summary>
+    private void AttachFsChromeFloat()
     {
-        _fsChromeTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
-        _fsChromeTimer.Tick -= FsChromeTimer_Tick;
-        _fsChromeTimer.Tick += FsChromeTimer_Tick;
+        if (_fsChromeFloating) return;
 
-        WriteBar.MouseEnter -= FsChrome_MouseEnter;
-        WriteBar.MouseLeave -= FsChrome_MouseLeave;
-        InfoBar.MouseEnter -= FsChrome_MouseEnter;
-        InfoBar.MouseLeave -= FsChrome_MouseLeave;
-        WriteBar.MouseEnter += FsChrome_MouseEnter;
-        WriteBar.MouseLeave += FsChrome_MouseLeave;
-        InfoBar.MouseEnter += FsChrome_MouseEnter;
-        InfoBar.MouseLeave += FsChrome_MouseLeave;
+        EnsureFsChromeOverlay();
+
+        if (WriteBar.Parent is System.Windows.Controls.Panel fromPanel)
+        {
+            fromPanel.Children.Remove(WriteBar);
+            fromPanel.Children.Remove(InfoBar);
+        }
+
+        WriteBar.ClearValue(Grid.RowProperty);
+        InfoBar.ClearValue(Grid.RowProperty);
+
+        var panel = _fsChromeOverlay!.Panel;
+        panel.Children.Clear();
+        panel.Children.Add(WriteBar);
+        panel.Children.Add(InfoBar);
+
+        // Bars live only in the float host; keep them Visible so measure works when shown
+        WriteBar.Visibility = Visibility.Visible;
+        InfoBar.Visibility = Visibility.Visible;
+
+        // Zero layout rows — ContentRow (*) fills the whole client area for the FS session
+        WriteBarRow.Height = new GridLength(0);
+        InfoBarRow.Height = new GridLength(0);
+
+        var owner = new WindowInteropHelper(this).EnsureHandle();
+        // Attach without Show() — no flash of the write bar
+        _fsChromeOverlay.Attach(owner);
+
+        _fsChromeFloating = true;
+        _fsChromeVisible = false;
     }
 
-    private void StopFsChromeWatch()
+    private void DetachFsChromeFloat()
     {
-        try { _fsChromeTimer?.Stop(); } catch { /* ignore */ }
-        WriteBar.MouseEnter -= FsChrome_MouseEnter;
-        WriteBar.MouseLeave -= FsChrome_MouseLeave;
-        InfoBar.MouseEnter -= FsChrome_MouseEnter;
-        InfoBar.MouseLeave -= FsChrome_MouseLeave;
-        _fsChromePinned = false;
+        if (!_fsChromeFloating) return;
+
+        try { _fsChromeOverlay?.HideChrome(); } catch { /* ignore */ }
+        try { _fsChromeOverlay?.Detach(); } catch { /* ignore */ }
+
+        var panel = _fsChromeOverlay?.Panel;
+        if (panel is not null)
+        {
+            panel.Children.Remove(WriteBar);
+            panel.Children.Remove(InfoBar);
+        }
+
+        // Clear float-only size constraints
+        WriteBar.ClearValue(FrameworkElement.MaxWidthProperty);
+        InfoBar.ClearValue(FrameworkElement.MaxWidthProperty);
+
+        if (WriteBar.Parent is null)
+            RootLayoutGrid.Children.Add(WriteBar);
+        if (InfoBar.Parent is null)
+            RootLayoutGrid.Children.Add(InfoBar);
+
+        Grid.SetRow(WriteBar, 1);
+        Grid.SetRow(InfoBar, 2);
+
+        WriteBarRow.Height = GridLength.Auto;
+        InfoBarRow.Height = GridLength.Auto;
+
+        WriteBar.Visibility = Visibility.Visible;
+        InfoBar.Visibility = Visibility.Visible;
+
+        _fsChromeFloating = false;
+        _fsChromeVisible = true;
     }
 
-    private void FsChrome_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    private void EnsureFsChromeOverlay()
     {
-        if (!_isFullscreen) return;
-        _fsChromePinned = true;
-        SetFullscreenChromeVisible(true);
-        try { _fsChromeTimer?.Stop(); } catch { /* ignore */ }
-    }
-
-    private void FsChrome_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (!_isFullscreen) return;
-        _fsChromePinned = false;
-        _fsChromeTimer?.Stop();
-        _fsChromeTimer?.Start();
-    }
-
-    private void FsChromeTimer_Tick(object? sender, EventArgs e)
-    {
-        try { _fsChromeTimer?.Stop(); } catch { /* ignore */ }
-        if (!_isFullscreen || _fsChromePinned) return;
-        SetFullscreenChromeVisible(false);
+        if (_fsChromeOverlay is not null && !_fsChromeOverlay.IsDisposed)
+            return;
+        _fsChromeOverlay = new FsChromeOverlay();
     }
 
     private void SetFullscreenChromeVisible(bool visible)
     {
-        var vis = visible ? Visibility.Visible : Visibility.Collapsed;
-        WriteBar.Visibility = vis;
-        InfoBar.Visibility = vis;
+        if (_fsChromeVisible == visible &&
+            (!visible || (_fsChromeOverlay?.Visible ?? false) == visible))
+        {
+            if (visible && _fsChromeFloating)
+                _fsChromeOverlay?.SyncToMonitor();
+            return;
+        }
+
+        if (_fsChromeFloating && _fsChromeOverlay is not null)
+        {
+            WriteBar.Visibility = Visibility.Visible;
+            InfoBar.Visibility = Visibility.Visible;
+
+            if (visible)
+            {
+                _fsChromeOverlay.ShowChrome();
+            }
+            else
+            {
+                try { Keyboard.ClearFocus(); } catch { /* ignore */ }
+                try { WriteBox.MoveFocus(new TraversalRequest(FocusNavigationDirection.Previous)); }
+                catch { /* ignore */ }
+                _fsChromeOverlay.HideChrome();
+            }
+        }
+        else
+        {
+            // Not floating: should not happen in FS. Never Collapsed on layout rows in FS path.
+            var vis = visible ? Visibility.Visible : Visibility.Collapsed;
+            WriteBar.Visibility = vis;
+            InfoBar.Visibility = vis;
+        }
+
         _fsChromeVisible = visible;
-        // Video chrome is hover-based on the video surface (not FS write-bar chrome)
     }
 
-    /// <summary>Fullscreen: show write/status near bottom edge.</summary>
+    /// <summary>
+    /// Fullscreen hover: show float chrome near bottom; hide immediately when pointer leaves
+    /// (including after a click / while caret is blinking). Never touches main layout size.
+    /// </summary>
     private void UpdateFullscreenChromeFromPointer(System.Drawing.Point screen)
     {
-        if (!_isFullscreen || _fsChromePinned) return;
+        if (!_isFullscreen || !_fsChromeFloating) return;
         try
         {
-            var tl = PointToScreen(new System.Windows.Point(0, 0));
-            var br = PointToScreen(new System.Windows.Point(ActualWidth, ActualHeight));
-            var bottomZone = br.Y - 72;
-            var inX = screen.X >= tl.X && screen.X <= br.X;
-            if (inX && screen.Y >= bottomZone)
-            {
-                if (!_fsChromeVisible)
-                    SetFullscreenChromeVisible(true);
-                _fsChromeTimer?.Stop();
-                _fsChromeTimer?.Start();
-            }
+            // Use monitor of main window — same space the float bar is pinned to
+            var hwnd = new WindowInteropHelper(this).Handle;
+            var mon = hwnd != IntPtr.Zero
+                ? System.Windows.Forms.Screen.FromHandle(hwnd).Bounds
+                : System.Windows.Forms.Screen.PrimaryScreen?.Bounds
+                  ?? new System.Drawing.Rectangle(0, 0, 1920, 1080);
+
+            var bottomZone = mon.Bottom - 80;
+            var inMonitor = screen.X >= mon.Left && screen.X < mon.Right
+                            && screen.Y >= mon.Top && screen.Y < mon.Bottom;
+            var inBottom = inMonitor && screen.Y >= bottomZone;
+            var overChrome = _fsChromeOverlay is not null &&
+                             _fsChromeOverlay.Visible &&
+                             _fsChromeOverlay.ContainsScreenPoint(screen);
+
+            // Focus must NOT pin. Only pointer over bottom strip or the bar itself.
+            if (inBottom || overChrome)
+                SetFullscreenChromeVisible(true);
+            else if (_fsChromeVisible || (_fsChromeOverlay?.Visible ?? false))
+                SetFullscreenChromeVisible(false);
         }
         catch
         {
             // ignore
         }
+    }
+
+    private void DisposeFsChromeOverlay()
+    {
+        try
+        {
+            if (_fsChromeFloating)
+                DetachFsChromeFloat();
+        }
+        catch { /* ignore */ }
+
+        var overlay = _fsChromeOverlay;
+        _fsChromeOverlay = null;
+        _fsChromeFloating = false;
+        if (overlay is null) return;
+        try
+        {
+            overlay.Detach();
+            overlay.Dispose();
+        }
+        catch { /* ignore */ }
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -2083,7 +2314,7 @@ public partial class MainWindow : Window
         try { _statsTimer?.Stop(); } catch { /* ignore */ }
         try { _channelTimer?.Stop(); } catch { /* ignore */ }
         try { _pointerTimer?.Stop(); } catch { /* ignore */ }
-        try { _fsChromeTimer?.Stop(); } catch { /* ignore */ }
+        try { DisposeFsChromeOverlay(); } catch { /* ignore */ }
         try { _bbsPoller?.Stop(); } catch { /* ignore */ }
         try { _videoChrome?.HideChrome(); } catch { /* ignore */ }
         try { _player?.Stop(); } catch { /* ignore */ }
@@ -2097,7 +2328,7 @@ public partial class MainWindow : Window
         try { _statsTimer?.Stop(); } catch { }
         try { _channelTimer?.Stop(); } catch { }
         try { _pointerTimer?.Stop(); } catch { }
-        try { _fsChromeTimer?.Stop(); } catch { }
+        try { DisposeFsChromeOverlay(); } catch { }
         try { Mouse.OverrideCursor = null; } catch { }
 
         try
@@ -2147,7 +2378,7 @@ public partial class MainWindow : Window
         _player = null;
         _playerReady = false;
 
-        try { _statsTimer = null; _channelTimer = null; _pointerTimer = null; _fsChromeTimer = null; }
+        try { _statsTimer = null; _channelTimer = null; _pointerTimer = null; }
         catch { /* ignore */ }
     }
 

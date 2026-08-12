@@ -1,5 +1,7 @@
 # NewPCRPlayer 仕様書（作業用）
 
+最終更新: 2026-08-12
+
 ## 0. 最重要前提
 
 これは PeerCast クライアントの新規開発ではない。
@@ -26,16 +28,131 @@
 | 6a | board 設定・正規化・URL rewrite・配置 | 完了 |
 | 6b | コメント UI（新着・下端追従・フォント・**>>N**） | 完了 |
 | 6c | 窓クローム（動画右上 min/max/close オーバーレイ） | 完了 |
-| 7 | 安定化・再接続・終了処理・差し替え運用 | **進行中** |
+| 7 | 安定化・再接続・終了処理・差し替え運用 | **実装済み・受け入れ確認中** |
 
 ## Phase 7 受け入れ条件
 
-1. 終了時にタイマー / BBS / mpv / 動画クロームが例外なく解放される
-2. ライブ切断（end-file error/eof）後、自動再接続を続ける（長めバックオフ）
-3. 再接続中はステータスバーに状態が出る
-4. 差し替えチェックリストが [PECARECORDER.md](PECARECORDER.md) に揃っている
+| # | 条件 | 実装 | 実機確認 |
+|---|------|------|----------|
+| 1 | 終了時にタイマー / BBS / mpv / 動画クロームが例外なく解放される | 済 | 未 |
+| 2 | ライブ切断後、自動再接続を続ける（backoff） | 済 | 一部 OK（長時間未） |
+| 3 | 再接続中はステータスバーに状態が出る | 済 | 一部 OK |
+| 4 | 差し替えチェックリストが [PECARECORDER.md](PECARECORDER.md) に揃っている | 済 | チェック未消化 |
 
-## Phase 6b 受け入れ条件
+## 実装済み機能（現状サマリ）
+
+### 再生
+
+- libmpv 埋め込み（WinForms `PlayerPanel` + `wid`）
+- 起動引数 `"$x" "$0" "$3"`（stream/pls・ch名・Contact BBS）
+- `/pls/` → `/stream/` 変換、`tip` 維持
+- 音量（ホイール / ↑↓、初期 0）
+- 一時停止 Space、終了メニュー
+- **ライブ再接続**
+  - `end-file`（quit 以外）→ 再接続スケジュール
+  - 停滞監視（約 8 秒、受信ビットレート / time-pos が進まない）→ 強制再接続
+  - lavf 内部 reconnect は使わず、アプリ側で `loadfile`
+  - ステータス: `切断 — 再接続…` / `再接続待機 Xs…` / `再接続中… (N)`
+- mpv ライブ向けキャッシュ（メモリ抑制）
+  - `demuxer-max-bytes=8MiB`
+  - `demuxer-max-back-bytes=0`
+  - `demuxer-readahead-secs=1.5`
+  - `demuxer-seekable-cache=no`
+  - `demuxer-donate-buffer=no`
+  - `network-timeout=8`、`keep-open=no`
+
+### UI / 窓
+
+- 枠なしウィンドウ、動画縁でのリサイズ・ドラッグ
+- コメント列スプリッタ、表示 ON/OFF
+- **動画右上クローム**（`VideoChromeOverlay`）: 所有 WinForms、ホバーで min/max/close
+- **フルスクリーン**
+  - F11 / ダブルクリック / Esc
+  - 書込欄 + ステータスは **フロート**（`FsChromeOverlay` + ElementHost）
+  - レイアウト行高 0 のため show/hide で動画サイズが変わらない
+  - 下端ホバーで表示、マウスアウトで即非表示（フォーカスでピン留めしない）
+  - 最大化**前**にバーをレイアウトから外す（FS 突入時のサイズポップ軽減）
+- 書込欄: Enter=改行で下方向に窓を伸ばす（ContentRow ピクセル固定）、Shift+Enter=送信
+
+### コメント / BBS
+
+- Contact URL からスレ取得・ポーリング
+- 仮想化 ListBox、表示は最新 **120** 件（裏ではスレ全体を保持）
+- 新着ハイライト、最下部追従
+- `>>N` / `＞＞N` アンカー（表示中のみジャンプ）
+- スレタイクリックで一覧ポップアップ（書込可=黒 / 満了=灰）
+- 設定: ヘッダ/本文フォント、レス#・名前・日時の表示、取得間隔、正規化 など
+- 設定ファイル: `%LOCALAPPDATA%\NewPCRPlayer\settings.json`
+- ログ: `%LOCALAPPDATA%\NewPCRPlayer\player.log`
+
+### ステータスバー
+
+- 左: ch 名・種別・ジャンル等（view.xml）+ **実受信ビットレート**（約 1 秒更新）+ fps  
+  - ビットレートは channel.xml 申告値ではなく mpv `packet-*-bitrate` 等
+  - 受信なし時は `0kbps`
+- 右: 解像度・再生経過、右端に音量
+
+## 技術スタック
+
+| 層 | 技術 |
+|----|------|
+| UI | WPF (.NET 8) |
+| 動画 HWND | WinForms host + libmpv |
+| 動画上 UI | 所有 WinForms ツール窓（airspace 回避） |
+| BBS | HttpClient + DAT/HTML パーサ |
+| 対象 | Windows x64 |
+
+### 主要ソース
+
+| パス | 役割 |
+|------|------|
+| `src/NewPCRPlayer/MainWindow.xaml(.cs)` | メイン UI、FS、再接続、ステータス |
+| `src/NewPCRPlayer/Services/Mpv/MpvPlayerHost.cs` | libmpv、キャッシュ、bitrate API |
+| `src/NewPCRPlayer/Services/VideoChromeOverlay.cs` | 右上 min/max/close |
+| `src/NewPCRPlayer/Services/FsChromeOverlay.cs` | FS 書込/ステータス フロート |
+| `src/NewPCRPlayer/Services/Bbs/*` | 掲示板 |
+| `src/NewPCRPlayer/Services/PeerCast/*` | view.xml |
+| `docs/PECARECORDER.md` | 差し替え手順・チェックリスト |
+
+### ビルド成果物
+
+```
+src/NewPCRPlayer/bin/Release/net8.0-windows/NewPCRPlayer.exe   # 運用確認用
+src/NewPCRPlayer/bin/Debug/net8.0-windows/NewPCRPlayer.exe     # 開発用
+```
+
+## メモリ（既知の挙動）
+
+| 項目 | 内容 |
+|------|------|
+| 本家 PCRPlayer | おおよそ 50〜60MB でほぼ一定（ネイティブ） |
+| NewPCRPlayer | 起動 ~140MB 前後。.NET + WPF + libmpv の固定費が大きい |
+| 再生中 | ワーキングセットが伸び、ある程度で緩やか／頭打ちしやすい（例: 数分で 250〜270MB 付近） |
+| 対策済み | demuxer 前方 8MiB、後方 0、seekable cache off |
+| 未達 | 本家並み 50MB 台は現実的ではない。無限増が続く場合は別途調査 |
+
+## 既知の差分・後回し
+
+| 項目 | 状態 |
+|------|------|
+| FS 切替時の一瞬の「びよん」（レイアウト／最大化） | 軽減済み。本家並みの完全スムーズは後回し可 |
+| メモリを本家同等まで削減 | 非目標（スタック差）。ピーク抑制のみ実施 |
+| Phase 7 長時間再接続・プロセス残存の実機チェック | **未完了** |
+| PeCaRecorder 本番差し替えチェックリスト消化 | **未完了** |
+
+## 次にやること（優先順）
+
+1. **Phase 7 受け入れ確認**（コードは入っているので実機）
+   - 配信停止 → 再接続表示 → 再開で自動再生（長時間放置含む）
+   - 終了後プロセスが残らない
+   - PeCaRecorder から `$x $0 $3` で起動
+2. **[PECARECORDER.md](PECARECORDER.md) チェックリストを全部通す**
+3. 必要なら軽微 polish
+   - FS 切替のさらなるスムーズ化
+   - メモリが時間とともに止まらず伸びる場合の追加調査（BBS 全件保持など）
+4. 問題なければ Phase 7 を「完了」にし、差し替え運用ドキュメントを最終化
+
+## Phase 6b 受け入れ条件（参考・完了）
 
 1. 新着レスがハイライトされ、最下部へ自動スクロールする
 2. コメント表示フォント（レス情報行 / 本文）を設定できる
@@ -61,12 +178,6 @@
 プレイヤーは `/pls/` を `/stream/` に変換して再生（`tip` クエリは維持）。
 
 詳細: [PECARECORDER.md](PECARECORDER.md)
-
-## 技術スタック
-
-- UI: WPF (.NET 8) + 一部 WinForms（mpv ホスト / 動画上クローム）
-- 再生: libmpv（P/Invoke）
-- 対象: Windows x64
 
 ## 開発対象外
 
