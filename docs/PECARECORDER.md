@@ -1,10 +1,10 @@
 # PeCaRecorder 連携・差し替え手順
 
-NewPCRPlayer を **PCRPlayer の代替**として使うための手順です。  
+DSPlayer を **PCRPlayer の代替**として使うための手順です。  
 PeerCastStation / YP / PeCaRecorder 本体の改変は不要です。
 
 ```
-配信者 → OBS → PeerCastStation → YP → PeCaRecorder → NewPCRPlayer
+配信者 → OBS → PeerCastStation → YP → PeCaRecorder → DSPlayer
                                                       ↑ ここだけ置換
 ```
 
@@ -15,7 +15,7 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 | 項目 | 値 |
 |------|-----|
 | 有効 | チェック |
-| パス | `D:\...\NewPCRPlayer\src\NewPCRPlayer\bin\Release\net8.0-windows\NewPCRPlayer.exe`（ビルド成果物） |
+| パス | `D:\...\DSPlayer\src\DSPlayer\bin\Release\net8.0-windows\DSPlayer.exe`（ビルド成果物） |
 | 引数 | `"$x" "$0" "$3"` |
 | タイプ | `FLV\|WMV` または `FLV\|UNKNOWN` |
 | ブラウザで開く | オフ |
@@ -61,15 +61,15 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 2. Release ビルド:
 
    ```powershell
-   cd "D:\Vive cording\NewPCRPlayer"
+   cd "D:\Vive cording\DSPlayer"
    .\scripts\fetch-libmpv.ps1   # 未取得時
-   dotnet build .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release
+   dotnet build .\src\DSPlayer\DSPlayer.csproj -c Release
    ```
 
 3. 出力フォルダの中身を用意:
 
    ```
-   NewPCRPlayer.exe   →  PCRPlayer.exe にリネーム
+   DSPlayer.exe   →  PCRPlayer.exe にリネーム
    lib\mpv 系 DLL     →  同じ階層の lib\ または exe 横（ビルド設定に従う）
    ```
 
@@ -81,10 +81,10 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 
 ### 注意
 
-- NewPCRPlayer は **x64** 専用（`PCRPlayer64.exe` 相当）
+- DSPlayer は **x64** 専用（`PCRPlayer64.exe` 相当）
 - 32bit のみの環境は非対応
 - 設定は exe 横の XML ではなく  
-  `%LOCALAPPDATA%\NewPCRPlayer\settings.json`
+  `%LOCALAPPDATA%\DSPlayer\settings.json`
 - 本格 BBS UI は引き続き同梱の **PCRBrowser.exe** を起動可能  
   （右クリック → BBSブラウザ）
 
@@ -93,17 +93,17 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 | 元フォルダ | 用途 |
 |------------|------|
 | `PCRBrowser.exe` | 本格掲示板ブラウザ |
-| `skin\` | PCRBrowser 用（NewPCRPlayer 本体は未使用） |
+| `skin\` | PCRBrowser 用（DSPlayer 本体は未使用） |
 
 ## 3. 手動起動テスト
 
 ```powershell
 # ストリームのみ
-dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
+dotnet run --project .\src\DSPlayer\DSPlayer.csproj -c Release -- `
   "http://127.0.0.1:7144/stream/<ChannelID>" "テストch"
 
 # 本番相当（$x $0 $3）
-dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
+dotnet run --project .\src\DSPlayer\DSPlayer.csproj -c Release -- `
   "http://127.0.0.1:7144/pls/<ChannelID>?tip=host:port" `
   "チャンネル名" `
   "https://bbs.example/test/read.cgi/board/1234567890/"
@@ -142,7 +142,7 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 | コメント無し | 引数に `$3` があるか、Contact が BBS URL か |
 | libmpv エラー | `lib\mpv-2.dll`（または `mpv-1.dll`）が出力先にあるか |
 | 起動しない | x64 OS か、.NET 8 Desktop Runtime が入っているか |
-| 起動直後に落ちる | `%LOCALAPPDATA%\NewPCRPlayer\player.log` を確認 |
+| 起動直後に落ちる | `%LOCALAPPDATA%\DSPlayer\player.log` を確認 |
 | 再接続し続ける | tip / チャンネル ID が生きているか、YP で配信中か |
 | 切断後固まったまま | ログの `end-file` / `stall watchdog` / `schedule retry`。Release 最新ビルドか |
 | メモリが本家より多い | .NET+WPF+mpv のため起動~140MB前後は想定内。無限増のみ要調査 |

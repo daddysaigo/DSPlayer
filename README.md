@@ -1,9 +1,9 @@
-# NewPCRPlayer
+# DSPlayer
 
 既存 PeerCast 視聴環境向けの **PCRPlayer 代替プレイヤー**。
 
 ```
-PeCaRecorder → NewPCRPlayer.exe "$x" "$0" "$3"
+PeCaRecorder → DSPlayer.exe "$x" "$0" "$3"
 ```
 
 PeerCastStation / YP / PeCaRecorder は変更しません。
@@ -17,11 +17,11 @@ PeerCastStation / YP / PeCaRecorder は変更しません。
 ## セットアップ
 
 ```powershell
-cd "D:\Vive cording\NewPCRPlayer"
+cd "D:\Vive cording\DSPlayer"
 .\scripts\fetch-libmpv.ps1
-dotnet build .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release
+dotnet build .\src\DSPlayer\DSPlayer.csproj -c Release
 
-dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
+dotnet run --project .\src\DSPlayer\DSPlayer.csproj -c Release -- `
   "http://localhost:7144/pls/<ChannelID>?tip=host:port" `
   "テストch" `
   "https://example.com/test/read.cgi/board/1/"
@@ -31,7 +31,7 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 
 | 項目 | 値 |
 |------|-----|
-| パス | `...\NewPCRPlayer.exe` |
+| パス | `...\DSPlayer.exe` |
 | 引数 | **`"$x" "$0" "$3"`** |
 | タイプ | `FLV\|WMV` |
 
@@ -55,8 +55,8 @@ dotnet run --project .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release -- `
 | 書込 Enter | 改行（欄が下に伸びる） |
 | フルスクリーン下端ホバー | 書込欄・ステータスをフロート表示（動画サイズは不変） |
 
-設定: `%LOCALAPPDATA%\NewPCRPlayer\settings.json`  
-ログ: `%LOCALAPPDATA%\NewPCRPlayer\player.log`
+設定: `%LOCALAPPDATA%\DSPlayer\settings.json`  
+ログ: `%LOCALAPPDATA%\DSPlayer\player.log`
 
 ## 開発フェーズ
 
