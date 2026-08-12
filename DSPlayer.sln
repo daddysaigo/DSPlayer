@@ -1,0 +1,36 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{2431AD3B-44A2-4845-A09A-C1A3AA839D91}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DSPlayer", "src\DSPlayer\DSPlayer.csproj", "{68415D98-2674-4EB0-A6CF-647B1F442A33}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{BF5B6047-0164-4F2B-A8F3-25211C7E44C1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DSPlayer.Tests", "tests\DSPlayer.Tests\DSPlayer.Tests.csproj", "{273D2470-B68D-41DE-9A8D-7A8999821C43}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{68415D98-2674-4EB0-A6CF-647B1F442A33}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68415D98-2674-4EB0-A6CF-647B1F442A33}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68415D98-2674-4EB0-A6CF-647B1F442A33}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68415D98-2674-4EB0-A6CF-647B1F442A33}.Release|Any CPU.Build.0 = Release|Any CPU
+		{273D2470-B68D-41DE-9A8D-7A8999821C43}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{273D2470-B68D-41DE-9A8D-7A8999821C43}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{273D2470-B68D-41DE-9A8D-7A8999821C43}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{273D2470-B68D-41DE-9A8D-7A8999821C43}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{68415D98-2674-4EB0-A6CF-647B1F442A33} = {2431AD3B-44A2-4845-A09A-C1A3AA839D91}
+		{273D2470-B68D-41DE-9A8D-7A8999821C43} = {BF5B6047-0164-4F2B-A8F3-25211C7E44C1}
+	EndGlobalSection
+EndGlobal

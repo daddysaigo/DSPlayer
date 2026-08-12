@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Downloads libmpv (x86_64) for Windows into NewPCRPlayer/lib.
+  Downloads libmpv (x86_64) for Windows into DSPlayer/lib.
 
 .DESCRIPTION
   Prefers GitHub zhongfly/mpv-winbuild mpv-dev packages (libmpv-2.dll).
@@ -23,7 +23,7 @@ if ([string]::IsNullOrWhiteSpace($OutDir)) {
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-$TempDir = Join-Path $env:TEMP ("newpcrplayer-libmpv-" + [guid]::NewGuid().ToString("N"))
+$TempDir = Join-Path $env:TEMP ("dsplayer-libmpv-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
 function Find-SevenZip {
@@ -122,7 +122,7 @@ try {
 
     Write-Host ""
     Write-Host "Done. Rebuild so the DLL is copied to the output directory:"
-    Write-Host "  dotnet build .\src\NewPCRPlayer\NewPCRPlayer.csproj -c Release"
+    Write-Host "  dotnet build .\src\DSPlayer\DSPlayer.csproj -c Release"
     exit 0
 }
 finally {

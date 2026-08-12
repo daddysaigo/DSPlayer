@@ -1,4 +1,4 @@
-# NewPCRPlayer 仕様書（作業用）
+# DSPlayer 仕様書（作業用）
 
 最終更新: 2026-08-12
 
@@ -89,8 +89,8 @@
 - `>>N` / `＞＞N` アンカー（表示中のみジャンプ）
 - スレタイクリックで一覧ポップアップ（書込可=黒 / 満了=灰）
 - 設定: ヘッダ/本文フォント、レス#・名前・日時の表示、取得間隔、正規化 など
-- 設定ファイル: `%LOCALAPPDATA%\NewPCRPlayer\settings.json`
-- ログ: `%LOCALAPPDATA%\NewPCRPlayer\player.log`
+- 設定ファイル: `%LOCALAPPDATA%\DSPlayer\settings.json`
+- ログ: `%LOCALAPPDATA%\DSPlayer\player.log`
 
 ### ステータスバー
 
@@ -113,19 +113,19 @@
 
 | パス | 役割 |
 |------|------|
-| `src/NewPCRPlayer/MainWindow.xaml(.cs)` | メイン UI、FS、再接続、ステータス |
-| `src/NewPCRPlayer/Services/Mpv/MpvPlayerHost.cs` | libmpv、キャッシュ、bitrate API |
-| `src/NewPCRPlayer/Services/VideoChromeOverlay.cs` | 右上 min/max/close |
-| `src/NewPCRPlayer/Services/FsChromeOverlay.cs` | FS 書込/ステータス フロート |
-| `src/NewPCRPlayer/Services/Bbs/*` | 掲示板 |
-| `src/NewPCRPlayer/Services/PeerCast/*` | view.xml |
+| `src/DSPlayer/MainWindow.xaml(.cs)` | メイン UI、FS、再接続、ステータス |
+| `src/DSPlayer/Services/Mpv/MpvPlayerHost.cs` | libmpv、キャッシュ、bitrate API |
+| `src/DSPlayer/Services/VideoChromeOverlay.cs` | 右上 min/max/close |
+| `src/DSPlayer/Services/FsChromeOverlay.cs` | FS 書込/ステータス フロート |
+| `src/DSPlayer/Services/Bbs/*` | 掲示板 |
+| `src/DSPlayer/Services/PeerCast/*` | view.xml |
 | `docs/PECARECORDER.md` | 差し替え手順・チェックリスト |
 
 ### ビルド成果物
 
 ```
-src/NewPCRPlayer/bin/Release/net8.0-windows/NewPCRPlayer.exe   # 運用確認用
-src/NewPCRPlayer/bin/Debug/net8.0-windows/NewPCRPlayer.exe     # 開発用
+src/DSPlayer/bin/Release/net8.0-windows/DSPlayer.exe   # 運用確認用
+src/DSPlayer/bin/Debug/net8.0-windows/DSPlayer.exe     # 開発用
 ```
 
 ## メモリ（既知の挙動）
@@ -133,7 +133,7 @@ src/NewPCRPlayer/bin/Debug/net8.0-windows/NewPCRPlayer.exe     # 開発用
 | 項目 | 内容 |
 |------|------|
 | 本家 PCRPlayer | おおよそ 50〜60MB でほぼ一定（ネイティブ） |
-| NewPCRPlayer | 起動 ~140MB 前後。.NET + WPF + libmpv の固定費が大きい |
+| DSPlayer | 起動 ~140MB 前後。.NET + WPF + libmpv の固定費が大きい |
 | 再生中 | ワーキングセットが伸び、ある程度で緩やか／頭打ちしやすい（例: 数分で 250〜270MB 付近） |
 | 対策済み | demuxer 前方 8MiB、後方 0、seekable cache off |
 | 未達 | 本家並み 50MB 台は現実的ではない。無限増が続く場合は別途調査 |
