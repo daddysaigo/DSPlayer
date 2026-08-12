@@ -5,31 +5,37 @@ using System.Windows.Forms;
 namespace NewPCRPlayer.Services;
 
 /// <summary>
-/// Min / Max / Close as WinForms children of the video panel (mpv wid host).
-/// Must raise HWND above mpv's native VO sibling via SetWindowPos; WinForms
-/// BringToFront alone is not enough.
+/// Min/Max/Close chrome as an <b>owned</b> tool window (not a free-floating app window).
+/// <para>
+/// Parenting WinForms controls under the mpv <c>wid</c> panel is clickable but invisible:
+/// mpv's D3D/GL VO paints over GDI siblings every frame. A small owned top-level HWND
+/// paints above the owner's HwndHost (standard WPF airspace workaround) while still
+/// minimizing/moving with the parent via Win32 ownership.
+/// </para>
 /// </summary>
-public sealed class VideoChromeOverlay : Panel
+public sealed class VideoChromeOverlay : Form
 {
     private readonly Button _min;
     private readonly Button _max;
     private readonly Button _close;
-    private readonly System.Windows.Forms.Timer _zOrderTimer;
-    private readonly System.Windows.Forms.Timer _repaintTimer;
+    private readonly System.Windows.Forms.Timer _syncTimer;
+    private Control? _videoPanel;
 
     public const int BarHeight = 28;
     public const int ButtonWidth = 40;
-    /// <summary>Top-right hover zone (must beat resize grip ~14px).</summary>
     public const int HotWidth = 140;
     public const int HotHeight = 44;
 
-    // DEBUG: opaque loud colors so "clickable but invisible" is impossible to miss.
-    // Later: tone down to semi-opaque dark chrome.
+    // DEBUG: loud opaque colors until visibility is confirmed
     private static readonly Color DebugBarColor = Color.Magenta;
     private static readonly Color DebugMinColor = Color.Lime;
     private static readonly Color DebugMaxColor = Color.Cyan;
     private static readonly Color DebugCloseColor = Color.OrangeRed;
     private static readonly Color DebugTextColor = Color.Black;
+
+    private const int WsExToolwindow = 0x00000080;
+    private const int WsExNoactivate = 0x08000000;
+    private const int WsExLayered = 0x00080000;
 
     private static readonly IntPtr HwndTop = IntPtr.Zero;
     private const uint SwpNomove = 0x0002;
@@ -37,24 +43,9 @@ public sealed class VideoChromeOverlay : Panel
     private const uint SwpNoactivate = 0x0010;
     private const uint SwpShowwindow = 0x0040;
 
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll")]
     private static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")]
-    private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
-
-    [DllImport("user32.dll")]
-    private static extern bool UpdateWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprc, IntPtr hrgn, uint flags);
-
-    private const uint RdwInvalidate = 0x0001;
-    private const uint RdwErase = 0x0004;
-    private const uint RdwFrame = 0x0400;
-    private const uint RdwAllChildren = 0x0080;
-    private const uint RdwUpdatenow = 0x0100;
 
     public event EventHandler? MinimizeClick;
     public event EventHandler? MaximizeClick;
@@ -62,26 +53,25 @@ public sealed class VideoChromeOverlay : Panel
 
     public VideoChromeOverlay()
     {
-        Height = BarHeight;
-        Width = ButtonWidth * 3;
-        // Opaque — WinForms BackColor alpha is unreliable over mpv
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ControlBox = false;
+        TopMost = false; // ownership — not global topmost float
         BackColor = DebugBarColor;
         ForeColor = DebugTextColor;
-        Visible = false;
-        TabStop = false;
-        // Opaque painting path (no "transparent" panel tricks)
-        SetStyle(
-            ControlStyles.UserPaint |
-            ControlStyles.AllPaintingInWmPaint |
-            ControlStyles.OptimizedDoubleBuffer |
-            ControlStyles.Opaque |
-            ControlStyles.ResizeRedraw,
-            true);
-        UpdateStyles();
+        Size = new Size(ButtonWidth * 3, BarHeight);
+        AutoScaleMode = AutoScaleMode.None;
+        // Don't steal focus from main player
+        SetStyle(ControlStyles.Selectable, false);
 
         _min = MakeButton("─", "最小化", DebugMinColor);
         _max = MakeButton("□", "最大化", DebugMaxColor);
         _close = MakeButton("✕", "閉じる", DebugCloseColor);
+        _close.FlatAppearance.MouseOverBackColor = Color.FromArgb(0xFF, 0x40, 0x40);
+        _close.FlatAppearance.MouseDownBackColor = Color.FromArgb(0xC5, 0x0F, 0x1F);
 
         _min.Click += (_, _) => MinimizeClick?.Invoke(this, EventArgs.Empty);
         _max.Click += (_, _) => MaximizeClick?.Invoke(this, EventArgs.Empty);
@@ -92,89 +82,109 @@ public sealed class VideoChromeOverlay : Panel
         Controls.Add(_min);
         LayoutButtons();
 
-        // Keep above mpv's native child after it (re)creates surfaces
-        _zOrderTimer = new System.Windows.Forms.Timer { Interval = 200 };
-        _zOrderTimer.Tick += (_, _) =>
+        // Keep glued to video top-right (move/resize parent, DPI, etc.)
+        _syncTimer = new System.Windows.Forms.Timer { Interval = 32 };
+        _syncTimer.Tick += (_, _) =>
         {
-            if (IsDisposed || Parent is null) return;
-            Reposition();
+            if (IsDisposed || _videoPanel is null) return;
+            SyncToVideoPanel();
             if (Visible)
-            {
-                RaiseZOrder();
-                ForceRepaint();
-            }
+                RaiseAboveOwner();
         };
+    }
 
-        // Extra repaint while visible (mpv can overwrite the surface)
-        _repaintTimer = new System.Windows.Forms.Timer { Interval = 50 };
-        _repaintTimer.Tick += (_, _) =>
+    /// <summary>Do not activate when shown (avoids focus fight with main window).</summary>
+    protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
         {
-            if (IsDisposed || !Visible) return;
-            ForceRepaint();
-        };
+            var cp = base.CreateParams;
+            cp.ExStyle |= WsExToolwindow | WsExNoactivate;
+            // Not layered yet (debug solid). Layered can be re-enabled for alpha later.
+            return cp;
+        }
     }
 
     public void SetMaximizedGlyph(bool restored)
     {
+        if (IsDisposed) return;
         _max.Text = restored ? "❐" : "□";
         _max.AccessibleName = restored ? "元のサイズに戻す" : "最大化";
-        if (Visible)
-            ForceRepaint();
     }
 
-    public void AttachTo(Control videoPanel)
+    /// <summary>
+    /// Bind to main window HWND as owner and to the video panel for geometry.
+    /// </summary>
+    public void Attach(IWin32Window owner, Control videoPanel)
     {
+        ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(videoPanel);
-        if (Parent is not null)
-            Parent.Controls.Remove(this);
+        _videoPanel = videoPanel;
 
-        videoPanel.Controls.Add(this);
-        if (!IsHandleCreated)
-            CreateControl();
+        videoPanel.Resize -= OnVideoResized;
+        videoPanel.SizeChanged -= OnVideoResized;
+        videoPanel.Resize += OnVideoResized;
+        videoPanel.SizeChanged += OnVideoResized;
 
-        videoPanel.Resize -= ParentOnResize;
-        videoPanel.Resize += ParentOnResize;
-        videoPanel.SizeChanged -= ParentOnResize;
-        videoPanel.SizeChanged += ParentOnResize;
+        // Show once to establish ownership, then hide
+        if (!Visible)
+        {
+            try
+            {
+                Show(owner);
+            }
+            catch
+            {
+                // Fallback without owner if handle not ready
+                Show();
+            }
+        }
 
-        Reposition();
-        RaiseZOrder();
-        HideChrome();
-        _zOrderTimer.Start();
+        Visible = false;
+        SyncToVideoPanel();
+        _syncTimer.Start();
     }
 
-    private void ParentOnResize(object? sender, EventArgs e) => Reposition();
+    private void OnVideoResized(object? sender, EventArgs e) => SyncToVideoPanel();
 
-    public void Reposition()
+    public void SyncToVideoPanel()
     {
-        if (Parent is null || Parent.IsDisposed) return;
-        var w = Parent.ClientSize.Width;
-        var h = Parent.ClientSize.Height;
-        if (w < 1 || h < 1) return;
-
-        Width = ButtonWidth * 3;
-        Height = BarHeight;
-        Left = Math.Max(0, w - Width);
-        Top = 0;
-        LayoutButtons();
-        RaiseZOrder();
-        if (Visible)
-            ForceRepaint();
-    }
-
-    /// <summary>Put this HWND above mpv's native sibling (WinForms BringToFront is not enough).</summary>
-    public void RaiseZOrder()
-    {
-        if (IsDisposed) return;
+        if (_videoPanel is null || _videoPanel.IsDisposed || IsDisposed)
+            return;
         try
         {
-            if (!IsHandleCreated)
-                CreateControl();
-            if (!IsHandleCreated) return;
+            if (!_videoPanel.IsHandleCreated)
+                return;
 
-            BringToFront();
+            var w = _videoPanel.ClientSize.Width;
+            var h = _videoPanel.ClientSize.Height;
+            if (w < 1 || h < 1) return;
+
+            Width = ButtonWidth * 3;
+            Height = BarHeight;
+            LayoutButtons();
+
+            // Screen position of video panel top-right
+            var pt = _videoPanel.PointToScreen(new Point(Math.Max(0, w - Width), 0));
+            if (Location != pt)
+                Location = pt;
+        }
+        catch
+        {
+            // ignore transient handle issues
+        }
+    }
+
+    public void RaiseAboveOwner()
+    {
+        if (IsDisposed || !IsHandleCreated || !Visible) return;
+        try
+        {
+            // Stay above owner content (including HwndHost) without TopMost=true over all apps
             SetWindowPos(Handle, HwndTop, 0, 0, 0, 0,
-                SwpNomove | SwpNosize | SwpNoactivate | (Visible ? SwpShowwindow : 0u));
+                SwpNomove | SwpNosize | SwpNoactivate | SwpShowwindow);
         }
         catch
         {
@@ -185,60 +195,43 @@ public sealed class VideoChromeOverlay : Panel
     public void ShowChrome()
     {
         if (IsDisposed) return;
-        Reposition();
+        SyncToVideoPanel();
         if (!Visible)
+        {
             Visible = true;
-        RaiseZOrder();
-        ForceRepaint();
-        if (!_repaintTimer.Enabled)
-            _repaintTimer.Start();
+            // Ensure solid debug paint
+            BackColor = DebugBarColor;
+            _min.BackColor = DebugMinColor;
+            _max.BackColor = DebugMaxColor;
+            _close.BackColor = DebugCloseColor;
+        }
+        RaiseAboveOwner();
+        try
+        {
+            Invalidate(true);
+            Refresh();
+        }
+        catch { /* ignore */ }
     }
 
     public void HideChrome()
     {
         if (IsDisposed) return;
-        try { _repaintTimer.Stop(); } catch { /* ignore */ }
         if (Visible)
             Visible = false;
     }
 
-    /// <summary>Force GDI repaint of panel + buttons (mpv may cover without invalidating us).</summary>
-    public void ForceRepaint()
+    public bool IsMouseOverChrome(Point clientOnVideoPanel)
     {
-        if (IsDisposed || !IsHandleCreated) return;
-        try
-        {
-            // Ensure opaque debug colors stick (some themes reset)
-            BackColor = DebugBarColor;
-            _min.BackColor = DebugMinColor;
-            _max.BackColor = DebugMaxColor;
-            _close.BackColor = DebugCloseColor;
-
-            Invalidate(true);
-            Refresh();
-            foreach (Control c in Controls)
-            {
-                c.Invalidate();
-                c.Refresh();
-            }
-
-            InvalidateRect(Handle, IntPtr.Zero, true);
-            UpdateWindow(Handle);
-            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero,
-                RdwInvalidate | RdwErase | RdwFrame | RdwAllChildren | RdwUpdatenow);
-        }
-        catch
-        {
-            // ignore
-        }
-    }
-
-    public bool IsMouseOverChrome(Point clientOnParent)
-    {
-        if (Parent is null) return false;
-        var r = new Rectangle(Left, Top, Width, Height);
+        if (_videoPanel is null) return false;
+        // Chrome occupies top-right Width x Height of video client
+        var r = new Rectangle(
+            Math.Max(0, _videoPanel.ClientSize.Width - Width),
+            0,
+            Width,
+            Height);
         r.Inflate(6, 6);
-        return r.Contains(clientOnParent);
+        return r.Contains(clientOnVideoPanel);
     }
 
     public static bool IsInHotZone(Point clientOnParent, Size parentClientSize)
@@ -285,9 +278,14 @@ public sealed class VideoChromeOverlay : Panel
         return b;
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        using var br = new SolidBrush(DebugBarColor);
+        e.Graphics.FillRectangle(br, ClientRectangle);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
-        // Explicit fill so we never depend on default background erase alone
         using (var br = new SolidBrush(DebugBarColor))
             e.Graphics.FillRectangle(br, ClientRectangle);
         using (var pen = new Pen(Color.Yellow, 2))
@@ -295,19 +293,24 @@ public sealed class VideoChromeOverlay : Panel
         base.OnPaint(e);
     }
 
-    protected override void OnPaintBackground(PaintEventArgs e)
-    {
-        using var br = new SolidBrush(DebugBarColor);
-        e.Graphics.FillRectangle(br, ClientRectangle);
-    }
-
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            try { _zOrderTimer.Stop(); _zOrderTimer.Dispose(); } catch { /* ignore */ }
-            try { _repaintTimer.Stop(); _repaintTimer.Dispose(); } catch { /* ignore */ }
+            try { _syncTimer.Stop(); _syncTimer.Dispose(); } catch { /* ignore */ }
+            if (_videoPanel is not null)
+            {
+                try { _videoPanel.Resize -= OnVideoResized; } catch { /* ignore */ }
+                try { _videoPanel.SizeChanged -= OnVideoResized; } catch { /* ignore */ }
+            }
         }
         base.Dispose(disposing);
     }
+}
+
+/// <summary>Adapter so WPF HWND can own a WinForms Form.</summary>
+public sealed class Win32WindowHandle : IWin32Window
+{
+    public Win32WindowHandle(IntPtr handle) => Handle = handle;
+    public IntPtr Handle { get; }
 }
