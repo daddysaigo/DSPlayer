@@ -1499,7 +1499,8 @@ public partial class MainWindow : Window
         try
         {
             var result = await _bbsWriter.PostAsync(thread, name, mail, body).ConfigureAwait(true);
-            WriteLog("bbs write: " + result.Success + " " + result.Message);
+            WriteLog("bbs write: " + result.Success + " " + result.Message +
+                     (string.IsNullOrEmpty(result.ResponseSnippet) ? "" : " | " + result.ResponseSnippet));
 
             if (result.Success)
             {

@@ -92,7 +92,7 @@ public sealed class BbsWriter : IDisposable
 
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
         var bytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-        var text = enc.GetString(bytes);
+        var text = DecodeBest(bytes, enc);
         return InterpretResponse(resp.IsSuccessStatusCode, text, "したらば");
     }
 
@@ -180,32 +180,22 @@ public sealed class BbsWriter : IDisposable
         var flat = text.Replace("\r", "").Replace("\n", " ");
         var snippet = flat.Length > 200 ? flat[..200] : flat;
 
-        if (LooksLikeFloodLimit(text))
-            return FloodResult(text, snippet);
-
-        // Success markers used by various boards
-        if (text.Contains("書きこみました", StringComparison.Ordinal) ||
-            text.Contains("書き込みました", StringComparison.Ordinal) ||
-            text.Contains("書き込みが完了", StringComparison.Ordinal) ||
-            text.Contains("1秒待って", StringComparison.Ordinal) || // cookie confirm page still progress
-            text.Contains("cookie", StringComparison.OrdinalIgnoreCase) && text.Contains("書", StringComparison.Ordinal))
+        // Cookie / first-write confirm — must be checked before success,
+        // because those pages also say 「書きこみました」 / 「1秒待って」.
+        if (LooksLikeCookieConfirm(text))
         {
-            // cookie confirmation often needs a second post — surface clearly
-            if (text.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
-                text.Contains("クッキー", StringComparison.Ordinal) ||
-                text.Contains("変更せずもう一度", StringComparison.Ordinal) ||
-                text.Contains("１回目", StringComparison.Ordinal) ||
-                text.Contains("1回目", StringComparison.Ordinal))
+            return new BbsWriteResult
             {
-                return new BbsWriteResult
-                {
-                    Success = false,
-                    NeedsConfirmRetry = true,
-                    Message = "確認画面です。もう一度「書込」を押してください。",
-                    ResponseSnippet = snippet,
-                };
-            }
+                Success = false,
+                NeedsConfirmRetry = true,
+                Message = "確認画面です。もう一度「書込」を押してください。",
+                ResponseSnippet = snippet,
+            };
+        }
 
+        // したらば: 「書きこみが終わりました」「しばらくお待ち下さい」— 成功ページ
+        if (LooksLikeWriteSuccess(text))
+        {
             return new BbsWriteResult
             {
                 Success = true,
@@ -214,11 +204,10 @@ public sealed class BbsWriter : IDisposable
             };
         }
 
-        if (text.Contains("ＥＲＲＯＲ", StringComparison.Ordinal) ||
-            text.Contains("ERROR", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("エラー", StringComparison.Ordinal) ||
-            text.Contains("書込できません", StringComparison.Ordinal) ||
-            text.Contains("書き込めません", StringComparison.Ordinal))
+        if (LooksLikeFloodLimit(text))
+            return FloodResult(text, snippet);
+
+        if (LooksLikeHardError(text))
         {
             return new BbsWriteResult
             {
@@ -258,20 +247,66 @@ public sealed class BbsWriter : IDisposable
         };
     }
 
+    private static bool LooksLikeWriteSuccess(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        return text.Contains("書きこみました", StringComparison.Ordinal) ||
+               text.Contains("書き込みました", StringComparison.Ordinal) ||
+               text.Contains("書きこみが終わ", StringComparison.Ordinal) ||
+               text.Contains("書き込みが終わ", StringComparison.Ordinal) ||
+               text.Contains("書き込みが完了", StringComparison.Ordinal) ||
+               text.Contains("投稿が完了", StringComparison.Ordinal) ||
+               text.Contains("書き込みを受け付け", StringComparison.Ordinal);
+    }
+
+    private static bool LooksLikeCookieConfirm(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        return text.Contains("変更せずもう一度", StringComparison.Ordinal) ||
+               text.Contains("クッキーを設定", StringComparison.Ordinal) ||
+               text.Contains("cookieを設定", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("１回目", StringComparison.Ordinal) ||
+               text.Contains("1回目", StringComparison.Ordinal);
+    }
+
+    private static bool LooksLikeHardError(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        // Thread pages often have 「エラー報告」— that is not a write failure.
+        if (text.Contains("エラー報告", StringComparison.Ordinal))
+        {
+            var without = text.Replace("エラー報告", "", StringComparison.Ordinal);
+            if (!without.Contains("エラー", StringComparison.Ordinal) &&
+                !without.Contains("ＥＲＲＯＲ", StringComparison.Ordinal) &&
+                !without.Contains("ERROR", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return text.Contains("ＥＲＲＯＲ", StringComparison.Ordinal) ||
+               text.Contains("ERROR", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("エラー", StringComparison.Ordinal) ||
+               text.Contains("書込できません", StringComparison.Ordinal) ||
+               text.Contains("書き込めません", StringComparison.Ordinal);
+    }
+
     private static bool LooksLikeFloodLimit(string text)
     {
         if (string.IsNullOrEmpty(text))
             return false;
 
+        // Do not treat success-page “しばらくお待ち下さい” as flood.
         return text.Contains("連投", StringComparison.Ordinal) ||
                text.Contains("投稿間隔", StringComparison.Ordinal) ||
                text.Contains("連続投稿", StringComparison.Ordinal) ||
                text.Contains("書き込み間隔", StringComparison.Ordinal) ||
                text.Contains("短時間に", StringComparison.Ordinal) ||
                text.Contains("多重書き込み", StringComparison.Ordinal) ||
-               text.Contains("もう少し待", StringComparison.Ordinal) ||
-               text.Contains("しばらく待", StringComparison.Ordinal) ||
-               text.Contains("ちょっと待", StringComparison.Ordinal) ||
                text.Contains("秒たたないと", StringComparison.Ordinal) ||
                text.Contains("秒待たないと", StringComparison.Ordinal) ||
                text.Contains("たたないと書", StringComparison.Ordinal) ||
