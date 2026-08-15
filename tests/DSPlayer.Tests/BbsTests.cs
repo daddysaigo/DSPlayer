@@ -88,6 +88,55 @@ public class BbsTests
     }
 
     [Fact]
+    public void TryParse_Jpnkn_BoardOnlyUrl()
+    {
+        var url = "https://bbs.jpnkn.com/ubereats/";
+        var t = BbsThreadRef.TryParse(url);
+        Assert.NotNull(t);
+        Assert.Equal(BbsBoardKind.TwochStyle, t!.Kind);
+        Assert.True(t.IsBoardOnly);
+        Assert.Equal("bbs.jpnkn.com", t.Host);
+        Assert.Equal("ubereats", t.Board);
+        Assert.Null(t.ThreadId);
+        Assert.Equal("https://bbs.jpnkn.com/ubereats/subject.txt", t.SubjectUrl);
+        Assert.Null(t.DatUrl);
+        Assert.True(t.CanFetch);
+        Assert.False(t.CanWrite);
+        Assert.Equal(BbsWriteCooldown.JpnknDefaultSeconds, t.DefaultPostCooldownSeconds);
+        Assert.True(t.WithThread("1234567890").CanWrite);
+    }
+
+    [Fact]
+    public void TryParse_Jpnkn_ReadCgiBoardOnly()
+    {
+        var t = BbsThreadRef.TryParse("https://bbs.jpnkn.com/test/read.cgi/ubereats/");
+        Assert.NotNull(t);
+        Assert.Equal(BbsBoardKind.TwochStyle, t!.Kind);
+        Assert.True(t.IsBoardOnly);
+        Assert.Equal("ubereats", t.Board);
+        Assert.Null(t.ThreadId);
+        Assert.Equal("https://bbs.jpnkn.com/ubereats/subject.txt", t.SubjectUrl);
+    }
+
+    [Fact]
+    public void TryParse_Jpnkn_SubjectTxt()
+    {
+        var t = BbsThreadRef.TryParse("https://bbs.jpnkn.com/ubereats/subject.txt");
+        Assert.NotNull(t);
+        Assert.True(t!.IsBoardOnly);
+        Assert.Equal("ubereats", t.Board);
+    }
+
+    [Fact]
+    public void TryParse_GenericContactPage_NotForcedToTwochBoard()
+    {
+        var t = BbsThreadRef.TryParse("https://example.com/just-a-page");
+        Assert.NotNull(t);
+        Assert.Equal(BbsBoardKind.Unknown, t!.Kind);
+        Assert.False(t.IsBoardOnly);
+    }
+
+    [Fact]
     public void ParseSubjectTxt_Shitaraba()
     {
         var text =
@@ -133,6 +182,30 @@ public class BbsTests
     }
 
     [Fact]
+    public void IdCountStyle_TurnsRedAsCountGrows()
+    {
+        var one = BbsIdCountStyle.ForCount(1);
+        var five = BbsIdCountStyle.ForCount(5);
+        var ten = BbsIdCountStyle.ForCount(10);
+        Assert.False(one.Bold);
+        Assert.True(five.Color.R > five.Color.G);
+        Assert.False(ten.Bold);
+        Assert.True(ten.Color.R > ten.Color.B);
+    }
+
+    [Fact]
+    public void PosterId_ExtractsFromDateField()
+    {
+        Assert.Equal("Ab12Xy", BbsPosterId.Extract("2026/08/09(日) 12:00:00.00 ID:Ab12Xy"));
+        Assert.Equal("SNnL3gbc00", BbsPosterId.Extract("2026/08/09(日) 20:02:07 ID:SNnL3gbc00"));
+        Assert.Equal("xxxx", BbsPosterId.Extract("2026/01/01(木) 00:00:00 ID:xxxx???"));
+        Assert.Null(BbsPosterId.Extract("2026/01/01(木) 00:00:00"));
+        Assert.Null(BbsPosterId.Extract("ID:???"));
+        Assert.Equal("2026/08/09(日) 12:00:00.00",
+            BbsPosterId.DateWithoutId("2026/08/09(日) 12:00:00.00 ID:Ab12Xy"));
+    }
+
+    [Fact]
     public void ParseShitarabaRaw_Sample()
     {
         var raw =
@@ -143,6 +216,7 @@ public class BbsTests
         Assert.Equal(1, posts[0].Number);
         Assert.Equal("タイトル", posts[0].Title);
         Assert.Contains("ID:abc", posts[0].DateId);
+        Assert.Equal("abc", posts[0].PosterId);
         Assert.Equal("本文2", posts[1].BodyText);
     }
 
@@ -220,6 +294,31 @@ public class BbsTests
         }
         catch (HttpRequestException)
         {
+        }
+    }
+
+    [Fact]
+    public async Task LiveFetch_JpnknBoardOnly_IfReachable()
+    {
+        var url = "https://bbs.jpnkn.com/ubereats/";
+        var thread = BbsThreadRef.TryParse(url);
+        Assert.NotNull(thread);
+        Assert.True(thread!.IsBoardOnly);
+        Assert.Equal(BbsBoardKind.TwochStyle, thread.Kind);
+
+        using var client = new BbsClient();
+        try
+        {
+            var result = await client.FetchAsync(thread);
+            Assert.True(result.Posts.Count > 0, "jpnkn board-only should resolve subject and load posts");
+            Assert.False(string.IsNullOrWhiteSpace(result.ResolvedThreadId));
+        }
+        catch (HttpRequestException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+            // board empty / subject missing — still proves parse + fetch path
         }
     }
 

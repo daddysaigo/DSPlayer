@@ -143,7 +143,7 @@ public sealed class MpvPlayerHost : IDisposable
 
     public void SetVolume(double volume)
     {
-        volume = Math.Clamp(volume, 0, 150);
+        volume = Math.Clamp(volume, 0, 100);
         _volume = volume;
         if (_handle == IntPtr.Zero) return;
         try

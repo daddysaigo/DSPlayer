@@ -49,6 +49,10 @@ tmp-bbs-test/
 tmp/
 *.pdb
 
+## Python
+__pycache__/
+*.pyc
+
 ## IDE
 .idea/
 *.swp

@@ -5,6 +5,7 @@
         xmlns:wf="clr-namespace:System.Windows.Forms;assembly=System.Windows.Forms"
         xmlns:ctrl="clr-namespace:DSPlayer.Controls"
         Title="DSPlayer"
+        Icon="pack://application:,,,/Assets/dsplayer.ico"
         Width="1280"
         Height="720"
         MinWidth="480"
@@ -51,8 +52,27 @@
         </ContextMenu>
     </Window.ContextMenu>
 
-    <!-- Comment list themes: switch via settings CommentListTheme (Classic | Grok) -->
+    <!-- Comment list: Flat / Card layouts; colors from DynamicResource (set by CommentListTheme) -->
     <Window.Resources>
+        <!-- Defaults (overwritten at runtime by ApplyCommentListTheme) -->
+        <SolidColorBrush x:Key="CommentRowBorder" Color="#FFD0D0D0"/>
+        <SolidColorBrush x:Key="CommentRowHover" Color="#FFE8E8E8"/>
+        <SolidColorBrush x:Key="CommentRowNewBg" Color="#FFB8D4F0"/>
+        <SolidColorBrush x:Key="CommentRowNewBorder" Color="#FF4A90D9"/>
+        <SolidColorBrush x:Key="CommentCardBg" Color="#FFFFFCF8"/>
+        <SolidColorBrush x:Key="CommentCardBorder" Color="#FFE4DFD6"/>
+        <SolidColorBrush x:Key="CommentCardHoverBorder" Color="#FFD5CFC4"/>
+        <SolidColorBrush x:Key="CommentCardNewBg" Color="#FFFFF6E8"/>
+        <SolidColorBrush x:Key="CommentCardNewBorder" Color="#FFE8D4A8"/>
+        <SolidColorBrush x:Key="CommentCardNewAccent" Color="#FFE0A84A"/>
+        <SolidColorBrush x:Key="CommentCardAccentIdle" Color="#00000000"/>
+        <SolidColorBrush x:Key="CommentBadgeBg" Color="#FFEEE8DF"/>
+        <SolidColorBrush x:Key="CommentBadgeFg" Color="#FF6B6560"/>
+        <CornerRadius x:Key="CommentCardCornerRadius">8</CornerRadius>
+        <Thickness x:Key="CommentCardInnerPadding">10,8,10,10</Thickness>
+        <Thickness x:Key="CommentItemPadding">6,8</Thickness>
+        <Thickness x:Key="CommentItemMargin">0,0,0,2</Thickness>
+
         <!-- Thin, quiet vertical scrollbar for comment list -->
         <Style x:Key="CommentScrollBarThumb" TargetType="Thumb">
             <Setter Property="OverridesDefaultStyle" Value="True"/>
@@ -98,10 +118,10 @@
             </Style.Triggers>
         </Style>
 
-        <!-- ===== Classic: PCR-like flat rows (revert target) ===== -->
-        <Style x:Key="CommentItemStyleClassic" TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="6,8"/>
-            <Setter Property="Margin" Value="0,0,0,2"/>
+        <!-- ===== Flat: PCR-like rows ===== -->
+        <Style x:Key="CommentItemStyleFlat" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="{DynamicResource CommentItemPadding}"/>
+            <Setter Property="Margin" Value="{DynamicResource CommentItemMargin}"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -110,35 +130,39 @@
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border x:Name="Bd"
                                 Background="{TemplateBinding Background}"
-                                BorderBrush="#FFD0D0D0"
+                                BorderBrush="{DynamicResource CommentRowBorder}"
                                 BorderThickness="0,0,0,1"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#FFE8E8E8"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CommentRowHover}"/>
                             </Trigger>
                             <DataTrigger Binding="{Binding IsNew}" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#FFB8D4F0"/>
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF4A90D9"/>
-                                <Setter TargetName="Bd" Property="BorderThickness" Value="3,0,0,1"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CommentRowNewBg}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource CommentRowNewBorder}"/>
                             </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <DataTemplate x:Key="CommentItemTemplateClassic">
+        <DataTemplate x:Key="CommentItemTemplateFlat">
             <StackPanel>
-                <TextBox Text="{Binding DisplayHeader, Mode=OneWay}"
-                         IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                <ctrl:CommentHeaderBlock
+                         Number="{Binding Number}"
+                         NameText="{Binding NameText}"
+                         DateId="{Binding DateId}"
+                         ShowNumber="{Binding ShowNumber}"
+                         ShowName="{Binding ShowName}"
+                         ShowDate="{Binding ShowDate}"
+                         IdCount="{Binding IdCount}"
                          Foreground="{DynamicResource HeaderForeground}"
                          FontFamily="{DynamicResource HeaderFontFamily}"
                          FontSize="{DynamicResource HeaderFontSize}"
                          FontWeight="{DynamicResource HeaderFontWeight}"
-                         TextWrapping="Wrap" IsReadOnlyCaretVisible="True" Cursor="IBeam"
-                         Padding="0" Margin="0,0,0,1" Focusable="True"/>
+                         Margin="0,0,0,1"/>
                 <ctrl:AnchorBodyBlock Body="{Binding BodyText, Mode=OneWay}"
                                       FontFamily="{DynamicResource BodyFontFamily}"
                                       FontSize="{DynamicResource BodyFontSize}"
@@ -148,10 +172,10 @@
             </StackPanel>
         </DataTemplate>
 
-        <!-- ===== Grok: soft paper + cards, body-first hierarchy, quiet new accent ===== -->
-        <Style x:Key="CommentItemStyleGrok" TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="8,0,8,8"/>
+        <!-- ===== Card: body-first hierarchy + res# badge ===== -->
+        <Style x:Key="CommentItemStyleCard" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="{DynamicResource CommentItemPadding}"/>
+            <Setter Property="Margin" Value="{DynamicResource CommentItemMargin}"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -159,36 +183,38 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border x:Name="Card"
-                                Background="#FFFFFCF8"
-                                BorderBrush="#FFE4DFD6"
+                                Background="{DynamicResource CommentCardBg}"
+                                BorderBrush="{DynamicResource CommentCardBorder}"
                                 BorderThickness="1"
-                                CornerRadius="8"
-                                Padding="10,8,10,10"
+                                CornerRadius="{DynamicResource CommentCardCornerRadius}"
+                                Padding="{DynamicResource CommentCardInnerPadding}"
                                 SnapsToDevicePixels="True">
-                            <Border x:Name="Accent"
-                                    BorderBrush="Transparent"
-                                    BorderThickness="3,0,0,0"
-                                    Padding="8,0,0,0">
+                            <!-- Overlay rail only — must not push body text to the right -->
+                            <Grid>
                                 <ContentPresenter/>
-                            </Border>
+                                <Border x:Name="Accent"
+                                        Width="3"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Stretch"
+                                        Background="{DynamicResource CommentCardAccentIdle}"
+                                        IsHitTestVisible="False"/>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!-- No IsSelected chrome — body text selection is the selection model -->
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Card" Property="BorderBrush" Value="#FFD5CFC4"/>
+                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource CommentCardHoverBorder}"/>
                             </Trigger>
-                            <!-- New: soft amber wash + left accent (readable, not “selected blue”) -->
                             <DataTrigger Binding="{Binding IsNew}" Value="True">
-                                <Setter TargetName="Card" Property="Background" Value="#FFFFF6E8"/>
-                                <Setter TargetName="Card" Property="BorderBrush" Value="#FFE8D4A8"/>
-                                <Setter TargetName="Accent" Property="BorderBrush" Value="#FFE0A84A"/>
+                                <Setter TargetName="Card" Property="Background" Value="{DynamicResource CommentCardNewBg}"/>
+                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource CommentCardNewBorder}"/>
+                                <Setter TargetName="Accent" Property="Background" Value="{DynamicResource CommentCardNewAccent}"/>
                             </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <DataTemplate x:Key="CommentItemTemplateGrok">
+        <DataTemplate x:Key="CommentItemTemplateCard">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -198,9 +224,8 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <!-- Res# pill (hidden if settings hide res number) -->
                 <Border Grid.Row="0" Grid.Column="0"
-                        Background="#FFEEE8DF" CornerRadius="4"
+                        Background="{DynamicResource CommentBadgeBg}" CornerRadius="4"
                         Padding="7,2" Margin="0,0,8,0" VerticalAlignment="Top">
                     <Border.Style>
                         <Style TargetType="Border">
@@ -213,19 +238,27 @@
                         </Style>
                     </Border.Style>
                     <TextBlock Text="{Binding Number}"
-                               Foreground="#FF6B6560"
+                               Foreground="#0055CC"
+                               TextDecorations="Underline"
+                               Cursor="Hand"
                                FontSize="11" FontWeight="SemiBold"
-                               VerticalAlignment="Center"/>
+                               VerticalAlignment="Center"
+                               ToolTip="クリックで >>この番号を引用"
+                               MouseLeftButtonUp="ResBadge_MouseLeftButtonUp"/>
                 </Border>
-                <TextBox Grid.Row="0" Grid.Column="1"
-                         Text="{Binding DisplayHeaderNoNumber, Mode=OneWay}"
-                         IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                <ctrl:CommentHeaderBlock Grid.Row="0" Grid.Column="1"
+                         Number="{Binding Number}"
+                         NameText="{Binding NameText}"
+                         DateId="{Binding DateId}"
+                         ShowNumber="False"
+                         ShowName="{Binding ShowName}"
+                         ShowDate="{Binding ShowDate}"
+                         IdCount="{Binding IdCount}"
                          Foreground="{DynamicResource HeaderForeground}"
                          FontFamily="{DynamicResource HeaderFontFamily}"
                          FontSize="{DynamicResource HeaderFontSize}"
                          FontWeight="{DynamicResource HeaderFontWeight}"
-                         TextWrapping="Wrap" IsReadOnlyCaretVisible="True" Cursor="IBeam"
-                         Padding="0" VerticalAlignment="Center" Focusable="True"/>
+                         VerticalAlignment="Center"/>
                 <ctrl:AnchorBodyBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                       Body="{Binding BodyText, Mode=OneWay}"
                                       FontFamily="{DynamicResource BodyFontFamily}"
@@ -276,7 +309,7 @@
                         Background="#FFF0F0F0"
                         BorderBrush="#FFD0D0D0"
                         BorderThickness="1,0,0,0">
-                    <!-- Theme (Classic/Grok) applied at runtime via ApplyCommentListTheme -->
+                    <!-- Theme applied at runtime via ApplyCommentListTheme -->
                     <ListBox x:Name="CommentList"
                              Background="Transparent"
                              BorderThickness="0"
@@ -291,8 +324,8 @@
                              VirtualizingPanel.ScrollUnit="Pixel"
                              ScrollViewer.ScrollChanged="CommentScroll_ScrollChanged"
                              SizeChanged="CommentList_SizeChanged"
-                             ItemContainerStyle="{StaticResource CommentItemStyleClassic}"
-                             ItemTemplate="{StaticResource CommentItemTemplateClassic}">
+                             ItemContainerStyle="{StaticResource CommentItemStyleFlat}"
+                             ItemTemplate="{StaticResource CommentItemTemplateFlat}">
                         <ListBox.Resources>
                             <Style TargetType="ScrollBar" BasedOn="{StaticResource CommentScrollBar}"/>
                         </ListBox.Resources>
@@ -309,7 +342,7 @@
                     Background="#FF1E1E1E"
                     BorderBrush="#FF2A2A2A"
                     BorderThickness="0,1,0,0"
-                    Padding="8,4">
+                    Padding="8,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -394,17 +427,19 @@
                         </Border>
                     </Popup>
 
-                    <!-- 1行=28px固定。改行(\n)があるときだけ下方向に伸ばす（変更しない） -->
+                    <!-- フォントは固定13。箱の高さは文字に合わせて余白を詰める。改行時だけ下に伸ばす -->
                     <TextBox x:Name="WriteBox"
                              Grid.Column="1"
-                             Height="28"
-                             MinHeight="28"
-                             MaxHeight="120"
+                             Height="20"
+                             MinHeight="20"
+                             MaxHeight="160"
+                             Padding="2,1"
+                             BorderThickness="1"
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Disabled"
                              HorizontalScrollBarVisibility="Disabled"
-                             VerticalContentAlignment="Center"
+                             VerticalContentAlignment="Top"
                              Background="#FF2A2A2A"
                              Foreground="#FFE8E8E8"
                              BorderBrush="#FF444444"
@@ -412,7 +447,24 @@
                              FontSize="13"
                              ToolTip="本文（Enter=改行 / Shift+Enter=送信）"
                              PreviewKeyDown="WriteBox_PreviewKeyDown"
-                             TextChanged="WriteBox_TextChanged"/>
+                             TextChanged="WriteBox_TextChanged">
+                        <TextBox.Template>
+                            <ControlTemplate TargetType="TextBox">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ScrollViewer x:Name="PART_ContentHost"
+                                                  Margin="0"
+                                                  Padding="0"
+                                                  Focusable="False"
+                                                  HorizontalScrollBarVisibility="Hidden"
+                                                  VerticalScrollBarVisibility="Hidden"/>
+                                </Border>
+                            </ControlTemplate>
+                        </TextBox.Template>
+                    </TextBox>
 
                     <Button x:Name="WriteButton"
                             Grid.Column="2"
@@ -425,19 +477,58 @@
                 </Grid>
             </Border>
 
+            <!-- Not a Popup: Popup+virtualized ListBox hangs WPF. Window overlay only. -->
+            <Border x:Name="IdRefOverlay"
+                    Grid.Row="0" Grid.RowSpan="3"
+                    Visibility="Collapsed"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Background="#FFFFFFF8"
+                    BorderBrush="#FFCCCCCC"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,8"
+                    MinWidth="200"
+                    MaxWidth="340"
+                    Panel.ZIndex="20"
+                    IsHitTestVisible="True"
+                    MouseEnter="IdRefOverlay_MouseEnter"
+                    MouseLeave="IdRefOverlay_MouseLeave">
+                <StackPanel>
+                    <TextBlock x:Name="IdRefTitle"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="#FF333333"
+                               Margin="0,0,0,6"
+                               Text="ID"/>
+                    <StackPanel x:Name="IdRefRows"/>
+                </StackPanel>
+            </Border>
+
             <Border x:Name="InfoBar" Grid.Row="2"
                     Background="{StaticResource StatusBarBrush}"
                     Padding="8,4"
                     MinHeight="28">
                 <!-- Dock=Right is outermost first: Volume is far right, then stats, then status fills left -->
                 <DockPanel LastChildFill="True">
-                    <TextBlock x:Name="VolumeText"
-                               DockPanel.Dock="Right"
-                               Foreground="{StaticResource ForegroundBrush}"
-                               FontSize="11"
-                               Margin="12,0,0,0"
-                               VerticalAlignment="Center"
-                               Text="音量 0"/>
+                    <StackPanel DockPanel.Dock="Right"
+                                Orientation="Horizontal"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center">
+                        <TextBlock x:Name="VolumeLabel"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   FontSize="11"
+                                   VerticalAlignment="Center"
+                                   Text="音量"/>
+                        <TextBlock x:Name="VolumeText"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   FontSize="11"
+                                   FontFamily="Consolas, Cascadia Mono, Yu Gothic"
+                                   Width="22"
+                                   TextAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Text="0"/>
+                    </StackPanel>
                     <TextBlock x:Name="RightStatsText"
                                DockPanel.Dock="Right"
                                Foreground="#FFCCCCCC"

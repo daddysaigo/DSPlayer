@@ -2,6 +2,8 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using DSPlayer.Services.Bbs;
+using ThemeUi = DSPlayer.Themes.UiTheme;
+using ThemeComments = DSPlayer.Themes.CommentListTheme;
 
 namespace DSPlayer.Models;
 
@@ -20,14 +22,14 @@ public sealed class AppSettings
     public bool CommentPanelVisible { get; set; } = true;
 
     /// <summary>
-    /// App chrome skin (write bar, status, splitter, caption chrome). Independent of comments.
-    /// <c>Classic</c> | <c>Grok</c>
+    /// App chrome skin (write bar, status, splitter, caption). Independent of comments.
+    /// See <c>Themes.UiTheme.All</c>: Classic, Grok, Neon, Sakura, Terminal, Ember.
     /// </summary>
     public string UiTheme { get; set; } = "Grok";
 
     /// <summary>
-    /// Comment list layout only. <c>Classic</c> = flat rows | <c>Grok</c> = cards.
-    /// Independent of <see cref="UiTheme"/>.
+    /// Comment list skin (layout + palette). Independent of <see cref="UiTheme"/>.
+    /// See <c>Themes.CommentListTheme.All</c>: Classic, Grok, Neon, Sakura, Sticky, Bubble, Terminal.
     /// </summary>
     public string CommentListTheme { get; set; } = "Grok";
 
@@ -265,14 +267,9 @@ public sealed class AppSettings
         if (!ShowResNumber && !ShowResName && !ShowResDate)
             ShowResNumber = true;
 
-        UiTheme = NormalizeThemeId(UiTheme, "Grok");
-        CommentListTheme = NormalizeThemeId(CommentListTheme, "Grok");
+        UiTheme = ThemeUi.NormalizeId(UiTheme);
+        CommentListTheme = ThemeComments.NormalizeId(CommentListTheme);
     }
-
-    private static string NormalizeThemeId(string? value, string fallback) =>
-        (value ?? "").Trim().Equals("Classic", StringComparison.OrdinalIgnoreCase)
-            ? "Classic"
-            : (string.IsNullOrWhiteSpace(value) ? fallback : "Grok");
 
     public bool HasWindowPlacement =>
         WindowLeft is not null && WindowTop is not null &&

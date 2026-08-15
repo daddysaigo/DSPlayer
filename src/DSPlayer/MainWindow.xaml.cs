@@ -102,6 +102,13 @@ public partial class MainWindow : Window
     // Write-box multi-line: freeze content row (video+comments) in pixels; only window grows down
     private bool _contentRowFrozen;
     private double _frozenContentHeight;
+    private const double WriteBoxMaxHeight = 160;
+    private const string WriteButtonIdleLabel = "書込";
+    private readonly BbsWriteCooldown _writeCooldown = new();
+    private DispatcherTimer? _postCooldownTimer;
+    private DispatcherTimer? _newHighlightTimer;
+    private bool IsPostCooldownActive =>
+        _writeCooldown.RemainingSeconds(_writeThread ?? _bbsPoller?.ResolvedThread) > 0;
 
     /// <summary>WinForms min/max/close on the video panel (over mpv, not a top-level window).</summary>
     private VideoChromeOverlay? _videoChrome;
@@ -174,6 +181,15 @@ public partial class MainWindow : Window
         CommentList.AddHandler(
             AnchorBodyBlock.AnchorClickEvent,
             new EventHandler<AnchorClickEventArgs>(CommentList_AnchorClick));
+        CommentList.AddHandler(
+            CommentHeaderBlock.LinkClickEvent,
+            new EventHandler<HeaderLinkEventArgs>(CommentHeader_LinkClick));
+        CommentList.AddHandler(
+            CommentHeaderBlock.LinkHoverEvent,
+            new EventHandler<HeaderLinkEventArgs>(CommentHeader_LinkHover));
+        CommentList.AddHandler(
+            CommentHeaderBlock.LinkLeaveEvent,
+            new EventHandler<HeaderLinkEventArgs>(CommentHeader_LinkLeave));
         // Middle-click autoscroll: click once → move to scroll → click again / LMB to exit
         CommentList.PreviewMouseDown += CommentList_AutoScroll_PreviewMouseDown;
         PreviewKeyDown += CommentList_AutoScroll_PreviewKeyDown;
@@ -677,6 +693,8 @@ public partial class MainWindow : Window
             }
 
             UpdateVolumeText();
+            UpdateWriteBoxHeight();
+            EnsureNewHighlightTimer();
             StartTimers();
             StartPointerInteractionTimer();
             await StartBbsAsync().ConfigureAwait(true);
@@ -814,6 +832,20 @@ public partial class MainWindow : Window
         StatusText.Text = left.Count > 0 ? string.Join("  |  ", left) : "DSPlayer";
         var right = BuildRightStatusParts();
         RightStatsText.Text = right.Count > 0 ? string.Join("  ", right) : "";
+        UpdateWindowTitle();
+    }
+
+    /// <summary>
+    /// Taskbar hover preview / Alt-Tab use <see cref="Window.Title"/>.
+    /// PCRPlayer shows the channel name; keep the same when we know it.
+    /// Prefer live view.xml name, then PeCaRecorder <c>$0</c>, else "DSPlayer".
+    /// </summary>
+    private void UpdateWindowTitle()
+    {
+        var name = FirstNonEmpty(_channelInfo?.Name, _launchArgs.ChannelName)?.Trim();
+        var title = !string.IsNullOrEmpty(name) ? name! : "DSPlayer";
+        if (!string.Equals(Title, title, StringComparison.Ordinal))
+            Title = title;
     }
 
     /// <summary>
@@ -925,7 +957,19 @@ public partial class MainWindow : Window
     private void SetWriteEnabled(bool enabled)
     {
         WriteBox.IsEnabled = enabled;
-        WriteButton.IsEnabled = enabled;
+        RefreshWriteButtonEnabled();
+    }
+
+    private bool CanWriteNow =>
+        !_writing &&
+        (_writeThread?.CanWrite == true || _bbsPoller?.ResolvedThread?.CanWrite == true);
+
+    private void RefreshWriteButtonEnabled()
+    {
+        // Keep enabled during cooldown so the countdown number isn't grayed out
+        WriteButton.IsEnabled = CanWriteNow;
+        if (IsPostCooldownActive)
+            UpdatePostCooldownUi();
     }
 
     private void BbsPoller_SubjectsUpdated(object? sender, IReadOnlyList<BbsSubjectEntry> subjects)
@@ -1052,6 +1096,7 @@ public partial class MainWindow : Window
         WriteLog("bbs switch thread → " + item.Id);
         _comments.Clear();
         _bbsPoller.SwitchThread(item.Id);
+        UpdatePostCooldownUi();
     }
 
     private void Menu_SelectThread_Click(object sender, RoutedEventArgs e)
@@ -1154,6 +1199,27 @@ public partial class MainWindow : Window
             _comments.Add(new CommentItem(p, _settings, isNew: true));
 
         TrimCommentsHead();
+        RefreshIdCounts(e.AllPosts);
+        EnsureNewHighlightTimer();
+    }
+
+    private void EnsureNewHighlightTimer()
+    {
+        if (_newHighlightTimer is not null) return;
+        _newHighlightTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _newHighlightTimer.Tick += (_, _) => ExpireNewHighlights();
+        _newHighlightTimer.Start();
+    }
+
+    private void ExpireNewHighlights()
+    {
+        if (_comments.Count == 0) return;
+        var now = DateTime.UtcNow;
+        foreach (var c in _comments)
+        {
+            if (c.IsNew && now >= c.HighlightUntilUtc)
+                c.IsNew = false;
+        }
     }
 
     private void RebuildCommentsFromTail(IReadOnlyList<BbsPost> all, bool highlightNew)
@@ -1164,6 +1230,25 @@ public partial class MainWindow : Window
         var start = Math.Max(0, all.Count - MaxDisplayedComments);
         for (var i = start; i < all.Count; i++)
             _comments.Add(new CommentItem(all[i], _settings, isNew: highlightNew));
+        RefreshIdCounts(all);
+    }
+
+    private void RefreshIdCounts(IReadOnlyList<BbsPost> all)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var p in all)
+        {
+            var id = p.PosterId;
+            if (string.IsNullOrEmpty(id))
+                continue;
+            counts[id] = counts.TryGetValue(id, out var n) ? n + 1 : 1;
+        }
+
+        foreach (var c in _comments)
+        {
+            var id = c.PosterId;
+            c.IdCount = !string.IsNullOrEmpty(id) && counts.TryGetValue(id, out var n) ? n : 0;
+        }
     }
 
     private void RefreshAllCommentHeaders()
@@ -1195,33 +1280,71 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Grow write box only on explicit newlines. Single-line stays 28px.
-    /// Content row (video+comments) is pixel-frozen; only the window grows downward.
+    /// Grow write box only on explicit newlines. Always top-aligned so the first
+    /// Enter grows downward by a full line (center→top used to look like half a line).
+    /// Content row is pixel-frozen; only the window grows downward.
     /// </summary>
     private void WriteBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateWriteBoxHeight();
     }
 
-    private void UpdateWriteBoxHeight()
+    private double WriteBoxChromeHeight =>
+        WriteBox.Padding.Top + WriteBox.Padding.Bottom
+        + WriteBox.BorderThickness.Top + WriteBox.BorderThickness.Bottom;
+
+    private double WriteBoxSingleLineHeight =>
+        Math.Max(18.0, Math.Ceiling(WriteBoxChromeHeight + WriteBoxLineStep));
+
+    private double WriteBoxLineStep
     {
-        var text = WriteBox.Text ?? "";
+        get
+        {
+            var fontSize = WriteBox.FontSize > 0 ? WriteBox.FontSize : 13;
+            double spacing;
+            try { spacing = WriteBox.FontFamily.LineSpacing; }
+            catch { spacing = 1.35; }
+            if (spacing < 1.2) spacing = 1.35;
+            return Math.Ceiling(fontSize * spacing);
+        }
+    }
+
+    private static int CountWriteBoxLines(string text)
+    {
         var lines = 1;
         for (var i = 0; i < text.Length; i++)
         {
             if (text[i] == '\n')
                 lines++;
         }
+        return lines;
+    }
 
-        var target = lines <= 1
-            ? 28.0
-            : Math.Clamp(10.0 + lines * 18.0, 46.0, 120.0);
+    private double ComputeWriteBoxHeight(int lines)
+    {
+        var n = Math.Max(1, lines);
+        return Math.Min(WriteBoxMaxHeight, Math.Ceiling(WriteBoxChromeHeight + n * WriteBoxLineStep));
+    }
+
+    private void UpdateWriteBoxHeight()
+    {
+        var lines = CountWriteBoxLines(WriteBox.Text ?? "");
+        var single = WriteBoxSingleLineHeight;
+        var target = ComputeWriteBoxHeight(lines);
+
+        WriteBox.MinHeight = single;
+        WriteBox.MaxHeight = WriteBoxMaxHeight;
+        WriteBox.VerticalContentAlignment = VerticalAlignment.Top;
+        WriteBox.VerticalScrollBarVisibility = target >= WriteBoxMaxHeight - 0.5
+            ? System.Windows.Controls.ScrollBarVisibility.Auto
+            : System.Windows.Controls.ScrollBarVisibility.Disabled;
 
         var prev = WriteBox.Height;
         if (Math.Abs(prev - target) > 0.5)
             ApplyWriteBoxHeightChange(prev, target);
 
-        WriteButton.Height = 28;
+        try { WriteBox.ScrollToHome(); } catch { /* ignore */ }
+        WriteButton.Height = single;
     }
 
     /// <summary>
@@ -1271,12 +1394,18 @@ public partial class MainWindow : Window
                 ContentRow.Height = new GridLength(_frozenContentHeight, GridUnitType.Pixel);
             }
 
-            // Set write box + window together; content stays pixel-fixed
+            // Set write box first, then grow the window by the bar's real delta
+            // (first Enter used to clip because the theoretical line-step was short).
+            var barBefore = WriteBar.ActualHeight;
             WriteBox.Height = targetHeight;
+            try { WriteBox.UpdateLayout(); WriteBar.UpdateLayout(); } catch { /* ignore */ }
+            var barDelta = WriteBar.ActualHeight - barBefore;
+            if (Math.Abs(barDelta) < 0.5)
+                barDelta = delta;
 
             var work = SystemParameters.WorkArea;
-            var newWindowH = Height + delta;
-            if (delta > 0)
+            var newWindowH = Height + barDelta;
+            if (barDelta > 0)
                 newWindowH = Math.Min(newWindowH, Math.Max(MinHeight, work.Bottom - Top));
             else
                 newWindowH = Math.Max(MinHeight, newWindowH);
@@ -1288,7 +1417,7 @@ public partial class MainWindow : Window
             ContentRow.Height = new GridLength(_frozenContentHeight, GridUnitType.Pixel);
 
             // Back to single line → allow normal * layout again
-            if (targetHeight <= 28.5)
+            if (targetHeight <= WriteBoxSingleLineHeight + 0.5)
                 UnfreezeContentRow();
         }
         catch (Exception ex)
@@ -1324,15 +1453,16 @@ public partial class MainWindow : Window
             WriteBox.Text = string.Empty;
             WriteBox.CaretIndex = 0;
             WriteBox.SelectionLength = 0;
+            var single = WriteBoxSingleLineHeight;
             var prev = WriteBox.Height;
-            if (Math.Abs(prev - 28) > 0.5)
-                ApplyWriteBoxHeightChange(prev, 28);
+            if (Math.Abs(prev - single) > 0.5)
+                ApplyWriteBoxHeightChange(prev, single);
             else
             {
-                WriteBox.Height = 28;
+                WriteBox.Height = single;
                 UnfreezeContentRow();
             }
-            WriteButton.Height = 28;
+            WriteButton.Height = single;
             WriteBox.IsUndoEnabled = true;
         }
 
@@ -1349,13 +1479,15 @@ public partial class MainWindow : Window
     private async Task TryWriteAsync()
     {
         if (_writing) return;
+        if (IsPostCooldownActive)
+            return;
+
         var thread = _writeThread ?? _bbsPoller?.ResolvedThread;
         if (thread is null || !thread.CanWrite) return;
 
         var body = (WriteBox.Text ?? "").Trim();
         if (body.Length == 0) return;
 
-        ClearWriteBox();
         // Name/mail are not in settings UI; always sage anonymous post for now.
         var name = "";
         var mail = "sage";
@@ -1372,6 +1504,8 @@ public partial class MainWindow : Window
             if (result.Success)
             {
                 ClearWriteBox();
+                _writeCooldown.NoteSuccess(thread);
+                StartPostCooldownClock();
                 _stickToBottom = true;
                 await Task.Delay(800).ConfigureAwait(true);
                 _bbsPoller?.RequestRefresh();
@@ -1384,34 +1518,88 @@ public partial class MainWindow : Window
                 if (retry.Success)
                 {
                     ClearWriteBox();
+                    _writeCooldown.NoteSuccess(thread);
+                    StartPostCooldownClock();
                     _stickToBottom = true;
                     await Task.Delay(800).ConfigureAwait(true);
                     _bbsPoller?.RequestRefresh();
                 }
-                else
+                else if (retry.IsFloodLimited)
                 {
-                    WriteBox.Text = body;
-                    WriteBox.CaretIndex = WriteBox.Text.Length;
+                    _writeCooldown.NoteFlood(thread, retry.RetryAfterSeconds);
+                    StartPostCooldownClock();
                 }
             }
-            else
+            else if (result.IsFloodLimited)
             {
-                WriteBox.Text = body;
-                WriteBox.CaretIndex = WriteBox.Text.Length;
+                _writeCooldown.NoteFlood(thread, result.RetryAfterSeconds);
+                StartPostCooldownClock();
             }
         }
         catch (Exception ex)
         {
             WriteLog("bbs write error: " + ex.Message);
-            WriteBox.Text = body;
-            WriteBox.CaretIndex = WriteBox.Text.Length;
         }
         finally
         {
             _writing = false;
-            WriteButton.IsEnabled = _writeThread?.CanWrite == true ||
-                                    _bbsPoller?.ResolvedThread?.CanWrite == true;
+            RefreshWriteButtonEnabled();
         }
+    }
+
+    private void StartPostCooldownClock()
+    {
+        if (!IsPostCooldownActive)
+        {
+            ClearPostCooldownUi();
+            return;
+        }
+
+        _postCooldownTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _postCooldownTimer.Tick -= PostCooldown_Tick;
+        _postCooldownTimer.Tick += PostCooldown_Tick;
+        if (!_postCooldownTimer.IsEnabled)
+            _postCooldownTimer.Start();
+        UpdatePostCooldownUi();
+    }
+
+    private void ClearPostCooldownUi()
+    {
+        try { _postCooldownTimer?.Stop(); } catch { /* ignore */ }
+        WriteButton.Content = WriteButtonIdleLabel;
+        WriteButton.ToolTip = null;
+        try
+        {
+            var t = UiTheme.FromId(_settings.UiTheme);
+            WriteButton.FontWeight = t.UseAccentButton ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+        catch { WriteButton.FontWeight = FontWeights.Normal; }
+        RefreshWriteButtonEnabled();
+    }
+
+    private void PostCooldown_Tick(object? sender, EventArgs e) => UpdatePostCooldownUi();
+
+    private void UpdatePostCooldownUi()
+    {
+        if (_closing)
+        {
+            try { _postCooldownTimer?.Stop(); } catch { /* ignore */ }
+            return;
+        }
+
+        var thread = _writeThread ?? _bbsPoller?.ResolvedThread;
+        var remain = _writeCooldown.RemainingSeconds(thread);
+        if (remain <= 0)
+        {
+            ClearPostCooldownUi();
+            return;
+        }
+
+        WriteButton.Content = remain.ToString(CultureInfo.InvariantCulture);
+        WriteButton.FontWeight = FontWeights.Bold;
+        var interval = thread is null ? remain : _writeCooldown.KnownIntervalSeconds(thread);
+        WriteButton.ToolTip = "連投規制 あと " + remain + " 秒（間隔 " + interval + " 秒）";
+        // Stay enabled so the number isn't drawn with the disabled gray brush
     }
 
     private void CommentScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -1470,11 +1658,254 @@ public partial class MainWindow : Window
 
     private void ScrollCommentsToEnd() => ScrollCommentsToEndCore();
 
+    private DispatcherTimer? _idRefLeaveTimer;
+    private DispatcherTimer? _idRefHoverTimer;
+    private string? _idRefPendingId;
+    private string? _idRefOpenId;
+    private bool _idRefBusy;
+
     /// <summary>Phase 6b: >>N in comment body → jump to that res in the list.</summary>
     private void CommentList_AnchorClick(object? sender, AnchorClickEventArgs e)
     {
         e.Handled = true;
         JumpToResNumber(e.ResNumber);
+    }
+
+    private void CommentHeader_LinkClick(object? sender, HeaderLinkEventArgs e)
+    {
+        e.Handled = true;
+        if (e.Kind == HeaderLinkKind.ResNumber)
+        {
+            HideIdRefPopup();
+            QuoteResNumber(e.ResNumber);
+            return;
+        }
+
+        if (e.Kind == HeaderLinkKind.PosterId && !string.IsNullOrEmpty(e.PosterId))
+            ShowPosterIdOverlay(e.PosterId);
+    }
+
+    private void CommentHeader_LinkHover(object? sender, HeaderLinkEventArgs e)
+    {
+        if (e.Kind != HeaderLinkKind.PosterId || string.IsNullOrEmpty(e.PosterId))
+            return;
+        CancelIdRefLeave();
+        SchedulePosterIdOverlay(e.PosterId);
+    }
+
+    private void CommentHeader_LinkLeave(object? sender, HeaderLinkEventArgs e)
+    {
+        ScheduleIdRefLeave();
+    }
+
+    private void ResBadge_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: CommentItem item })
+            return;
+        e.Handled = true;
+        HideIdRefPopup();
+        QuoteResNumber(item.Number);
+    }
+
+    private void IdRefOverlay_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e) => CancelIdRefLeave();
+
+    private void IdRefOverlay_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e) => ScheduleIdRefLeave();
+
+    private void QuoteResNumber(int number)
+    {
+        if (number <= 0 || !WriteBox.IsEnabled)
+            return;
+
+        var insert = ">>" + number;
+        var text = WriteBox.Text ?? "";
+        var caret = WriteBox.CaretIndex;
+        if (caret < 0 || caret > text.Length)
+            caret = text.Length;
+
+        var needNl = caret > 0 && text[caret - 1] != '\n';
+        var chunk = (needNl ? "\n" : "") + insert + "\n";
+        WriteBox.Text = text.Insert(caret, chunk);
+        WriteBox.CaretIndex = caret + chunk.Length;
+        try { WriteBox.Focus(); } catch { /* ignore */ }
+    }
+
+    private void SchedulePosterIdOverlay(string posterId)
+    {
+        if (string.Equals(_idRefOpenId, posterId, StringComparison.Ordinal) &&
+            IdRefOverlay.Visibility == Visibility.Visible)
+            return;
+
+        _idRefPendingId = posterId;
+        _idRefHoverTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _idRefHoverTimer.Tick -= IdRefHover_Tick;
+        _idRefHoverTimer.Tick += IdRefHover_Tick;
+        _idRefHoverTimer.Stop();
+        _idRefHoverTimer.Start();
+    }
+
+    private void IdRefHover_Tick(object? sender, EventArgs e)
+    {
+        try { _idRefHoverTimer?.Stop(); } catch { /* ignore */ }
+        var id = _idRefPendingId;
+        _idRefPendingId = null;
+        if (!string.IsNullOrEmpty(id))
+            ShowPosterIdOverlay(id);
+    }
+
+    private void ShowPosterIdOverlay(string posterId)
+    {
+        if (_closing || _idRefBusy)
+            return;
+        if (string.Equals(_idRefOpenId, posterId, StringComparison.Ordinal) &&
+            IdRefOverlay.Visibility == Visibility.Visible)
+            return;
+
+        _idRefBusy = true;
+        try
+        {
+            var rows = new List<IdRefRow>(16);
+            IReadOnlyList<BbsPost> source;
+            try { source = SnapshotPosts(); }
+            catch { return; }
+
+            for (var i = 0; i < source.Count; i++)
+            {
+                var p = source[i];
+                if (!BbsPosterId.Same(p.PosterId, posterId))
+                    continue;
+                rows.Add(ToIdRefRow(p));
+                if (rows.Count >= 20)
+                    break;
+            }
+
+            if (rows.Count == 0)
+            {
+                HideIdRefPopup();
+                return;
+            }
+
+            IdRefTitle.Text = "ID:" + posterId + "  " + rows.Count + "レス";
+            IdRefRows.Children.Clear();
+            foreach (var row in rows)
+            {
+                var tb = new TextBlock
+                {
+                    Text = row.Number + "  " + row.Preview,
+                    FontSize = 12,
+                    Foreground = System.Windows.Media.Brushes.Black,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 6),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Tag = row.Number,
+                };
+                tb.MouseLeftButtonUp += IdRefRow_MouseLeftButtonUp;
+                IdRefRows.Children.Add(tb);
+            }
+
+            var pos = Mouse.GetPosition(RootLayoutGrid);
+            var x = Math.Max(8, pos.X + 14);
+            var y = Math.Max(8, pos.Y + 18);
+            IdRefOverlay.Visibility = Visibility.Visible;
+            IdRefOverlay.UpdateLayout();
+            var w = IdRefOverlay.ActualWidth;
+            var h = IdRefOverlay.ActualHeight;
+            var maxX = Math.Max(8, RootLayoutGrid.ActualWidth - w - 8);
+            var maxY = Math.Max(8, RootLayoutGrid.ActualHeight - h - 8);
+            if (x > maxX) x = maxX;
+            if (y > maxY) y = maxY;
+            IdRefOverlay.Margin = new Thickness(x, y, 0, 0);
+            _idRefOpenId = posterId;
+        }
+        catch (Exception ex)
+        {
+            WriteLog("id overlay: " + ex.Message);
+            HideIdRefPopup();
+        }
+        finally
+        {
+            _idRefBusy = false;
+        }
+    }
+
+    private void IdRefRow_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not TextBlock { Tag: int n })
+            return;
+        e.Handled = true;
+        HideIdRefPopup();
+        JumpToResNumber(n);
+    }
+
+    private IReadOnlyList<BbsPost> SnapshotPosts()
+    {
+        try
+        {
+            if (_bbsPoller?.Posts is { Count: > 0 } all)
+                return all.ToArray();
+        }
+        catch { /* poller may replace the list */ }
+
+        if (_comments.Count == 0)
+            return Array.Empty<BbsPost>();
+
+        var copy = new BbsPost[_comments.Count];
+        for (var i = 0; i < _comments.Count; i++)
+            copy[i] = _comments[i].Post;
+        return copy;
+    }
+
+    private static IdRefRow ToIdRefRow(BbsPost p)
+    {
+        var body = (p.BodyText ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (body.Length > 80)
+            body = body[..80] + "…";
+        return new IdRefRow(p.Number, string.IsNullOrEmpty(body) ? "（本文なし）" : body);
+    }
+
+    private void ScheduleIdRefLeave()
+    {
+        _idRefLeaveTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(280) };
+        _idRefLeaveTimer.Tick -= IdRefLeave_Tick;
+        _idRefLeaveTimer.Tick += IdRefLeave_Tick;
+        _idRefLeaveTimer.Stop();
+        _idRefLeaveTimer.Start();
+    }
+
+    private void CancelIdRefLeave()
+    {
+        try { _idRefLeaveTimer?.Stop(); } catch { /* ignore */ }
+    }
+
+    private void IdRefLeave_Tick(object? sender, EventArgs e)
+    {
+        CancelIdRefLeave();
+        HideIdRefPopup();
+    }
+
+    private void HideIdRefPopup()
+    {
+        CancelIdRefLeave();
+        try { _idRefHoverTimer?.Stop(); } catch { /* ignore */ }
+        _idRefPendingId = null;
+        _idRefOpenId = null;
+        try
+        {
+            IdRefRows.Children.Clear();
+            IdRefOverlay.Visibility = Visibility.Collapsed;
+        }
+        catch { /* ignore */ }
+    }
+
+    private sealed class IdRefRow
+    {
+        public IdRefRow(int number, string preview)
+        {
+            Number = number;
+            Preview = preview;
+        }
+
+        public int Number { get; }
+        public string Preview { get; }
     }
 
     private void JumpToResNumber(int resNumber)
@@ -1912,8 +2343,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateVolumeText() =>
-        VolumeText.Text = "音量 " + (_player?.Volume ?? 0).ToString("0");
+    private void UpdateVolumeText()
+    {
+        var n = (int)Math.Round(_player?.Volume ?? 0);
+        n = Math.Clamp(n, 0, 100);
+        VolumeText.Text = n.ToString();
+    }
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -2232,7 +2667,6 @@ public partial class MainWindow : Window
             CommentList.FontFamily = bodyFamily;
             CommentList.FontSize = bodySize;
             CommentList.FontWeight = bodyWeight;
-            // WriteBox のフォント/高さロジックは触らない（改行で伸びる仕様を維持）
         }
         catch (Exception ex)
         {
@@ -2241,7 +2675,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// App-wide Classic / Grok skin: window chrome, write/status bars, comments, overlays.
+    /// App chrome skin (write/status bars, caption). Comment list is applied separately.
     /// </summary>
     private void ApplyUiTheme()
     {
@@ -2264,10 +2698,10 @@ public partial class MainWindow : Window
             WriteButton.Background = t.Brush(t.ButtonBg);
             WriteButton.Foreground = t.Brush(t.ButtonFg);
             WriteButton.BorderBrush = t.Brush(t.ButtonBorder);
-            WriteButton.BorderThickness = new Thickness(t.IsGrok ? 0 : 1);
+            WriteButton.BorderThickness = new Thickness(t.UseAccentButton ? 0 : 1);
             try
             {
-                if (t.IsGrok)
+                if (t.UseAccentButton)
                 {
                     WriteButton.Padding = new Thickness(4, 2, 4, 2);
                     WriteButton.FontWeight = FontWeights.SemiBold;
@@ -2287,6 +2721,7 @@ public partial class MainWindow : Window
 
             InfoBar.Background = t.Brush(t.StatusBg);
             StatusText.Foreground = t.Brush(t.StatusFg);
+            VolumeLabel.Foreground = t.Brush(t.StatusFg);
             VolumeText.Foreground = t.Brush(t.StatusFg);
             RightStatsText.Foreground = t.Brush(t.StatusMuted);
 
@@ -2346,43 +2781,121 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Comment list layout only (Classic flat / Grok cards). Independent of chrome <see cref="UiTheme"/>.
+    /// Comment list layout + palette. Independent of chrome <see cref="UiTheme"/>.
     /// </summary>
     private void ApplyCommentListTheme()
     {
         try
         {
-            var grok = string.Equals(_settings.CommentListTheme, "Grok", StringComparison.OrdinalIgnoreCase);
-            if (grok)
+            var ct = CommentListTheme.FromId(_settings.CommentListTheme);
+            var freeze = (System.Windows.Media.Color c) =>
             {
-                // Card paper panel (same palette as Grok comment style)
-                CommentPanel.Background = ParseBrush("#F3EFE8", "#F3EFE8");
-                CommentPanel.BorderBrush = ParseBrush("#D8D2C8", "#D8D2C8");
-                CommentList.Padding = new Thickness(0, 8, 0, 8);
-                CommentList.ItemContainerStyle = (Style)FindResource("CommentItemStyleGrok");
-                CommentList.ItemTemplate = (DataTemplate)FindResource("CommentItemTemplateGrok");
+                var b = new System.Windows.Media.SolidColorBrush(c);
+                if (b.CanFreeze) b.Freeze();
+                return b;
+            };
+
+            // Palette resources for Flat / Card templates
+            Resources["CommentRowBorder"] = freeze(ct.RowBorder);
+            Resources["CommentRowHover"] = freeze(ct.RowHover);
+            Resources["CommentRowNewBg"] = freeze(ct.RowNewBg);
+            Resources["CommentRowNewBorder"] = freeze(ct.RowNewBorder);
+            Resources["CommentCardBg"] = freeze(ct.CardBg);
+            Resources["CommentCardBorder"] = freeze(ct.CardBorder);
+            Resources["CommentCardHoverBorder"] = freeze(ct.CardHoverBorder);
+            Resources["CommentCardNewBg"] = freeze(ct.CardNewBg);
+            Resources["CommentCardNewBorder"] = freeze(ct.CardNewBorder);
+            Resources["CommentCardNewAccent"] = freeze(ct.CardNewAccent);
+            Resources["CommentCardAccentIdle"] = freeze(ct.CardAccentIdle);
+            Resources["CommentBadgeBg"] = freeze(ct.BadgeBg);
+            Resources["CommentBadgeFg"] = freeze(ct.BadgeFg);
+            Resources["CommentCardCornerRadius"] = new CornerRadius(ct.CardCornerRadius);
+            Resources["CommentCardInnerPadding"] = ct.CardInnerPadding;
+            Resources["CommentItemPadding"] = ct.ItemPadding;
+            Resources["CommentItemMargin"] = ct.ItemMargin;
+
+            CommentPanel.Background = freeze(ct.PanelBg);
+            CommentPanel.BorderBrush = freeze(ct.PanelBorder);
+            CommentList.Padding = ct.ListPadding;
+
+            if (ct.Layout == CommentLayoutKind.Card)
+            {
+                CommentList.ItemContainerStyle = (Style)FindResource("CommentItemStyleCard");
+                CommentList.ItemTemplate = (DataTemplate)FindResource("CommentItemTemplateCard");
                 CommentList.SelectionMode = System.Windows.Controls.SelectionMode.Single;
                 CommentList.SelectedIndex = -1;
             }
             else
             {
-                CommentPanel.Background = ParseBrush("#F0F0F0", "#F0F0F0");
-                CommentPanel.BorderBrush = ParseBrush("#D0D0D0", "#D0D0D0");
-                CommentList.Padding = new Thickness(4, 0, 4, 0);
-                CommentList.ItemContainerStyle = (Style)FindResource("CommentItemStyleClassic");
-                CommentList.ItemTemplate = (DataTemplate)FindResource("CommentItemTemplateClassic");
+                CommentList.ItemContainerStyle = (Style)FindResource("CommentItemStyleFlat");
+                CommentList.ItemTemplate = (DataTemplate)FindResource("CommentItemTemplateFlat");
                 CommentList.SelectionMode = System.Windows.Controls.SelectionMode.Extended;
             }
+
+            // Dark themes: if body/header still use light-panel defaults, switch to readable colors
+            ApplyCommentColorSuggestions(ct);
 
             // Force container recycle so style swap paints immediately
             var src = CommentList.ItemsSource;
             CommentList.ItemsSource = null;
             CommentList.ItemsSource = src;
-            WriteLog("comment list theme: " + (grok ? "Grok" : "Classic"));
+            WriteLog("comment list theme: " + ct.Id);
         }
         catch (Exception ex)
         {
             WriteLog("comment theme: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// When switching skins, auto-adjust body/header colors if they still match a
+    /// known theme default (does not override arbitrary custom colors).
+    /// </summary>
+    private void ApplyCommentColorSuggestions(CommentListTheme ct)
+    {
+        // Any suggested color from known skins counts as "theme default"
+        var knownBodies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "#111111", "#000000", "#E8E8E8", "#E8E8F0", "#FFFFFF",
+            "#F5F3FF", "#3B0A2A", "#422006", "#0F172A", "#86EFAC",
+        };
+        var knownHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "#888888", "#777777", "#9A9A9A", "#9A9AA8",
+            "#A78BFA", "#BE185D", "#A16207", "#2563EB", "#4ADE80",
+        };
+        foreach (var t in CommentListTheme.All)
+        {
+            if (t.SuggestedBodyColor is not null) knownBodies.Add(t.SuggestedBodyColor);
+            if (t.SuggestedHeaderColor is not null) knownHeaders.Add(t.SuggestedHeaderColor);
+        }
+
+        var changed = false;
+        if (ct.SuggestedBodyColor is not null &&
+            (string.IsNullOrWhiteSpace(_settings.CommentBodyColor) ||
+             knownBodies.Contains(_settings.CommentBodyColor.Trim())))
+        {
+            if (!string.Equals(_settings.CommentBodyColor, ct.SuggestedBodyColor, StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.CommentBodyColor = ct.SuggestedBodyColor;
+                changed = true;
+            }
+        }
+        if (ct.SuggestedHeaderColor is not null &&
+            (string.IsNullOrWhiteSpace(_settings.CommentHeaderColor) ||
+             knownHeaders.Contains(_settings.CommentHeaderColor.Trim())))
+        {
+            if (!string.Equals(_settings.CommentHeaderColor, ct.SuggestedHeaderColor, StringComparison.OrdinalIgnoreCase))
+            {
+                _settings.CommentHeaderColor = ct.SuggestedHeaderColor;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            ApplyCommentFont();
+            try { _settings.Save(); } catch { /* ignore */ }
         }
     }
 
@@ -2517,8 +3030,8 @@ public partial class MainWindow : Window
             _isFullscreen = false;
 
             // Multi-line write height while layout is already windowed-chrome (still max frame)
-            if (WriteBox.Height > 28.5)
-                ApplyWriteBoxHeightChange(28, WriteBox.Height);
+            if (WriteBox.Height > WriteBoxSingleLineHeight + 0.5)
+                ApplyWriteBoxHeightChange(WriteBoxSingleLineHeight, WriteBox.Height);
 
             // Restore geometry in one step (avoid Normal's intermediate restore-bounds flicker)
             WindowState = WindowState.Normal;
@@ -2754,6 +3267,11 @@ public partial class MainWindow : Window
         try { _statsTimer?.Stop(); } catch { /* ignore */ }
         try { _channelTimer?.Stop(); } catch { /* ignore */ }
         try { _pointerTimer?.Stop(); } catch { /* ignore */ }
+        try { _postCooldownTimer?.Stop(); } catch { /* ignore */ }
+        try { _newHighlightTimer?.Stop(); } catch { /* ignore */ }
+        try { _idRefLeaveTimer?.Stop(); } catch { /* ignore */ }
+        try { _idRefHoverTimer?.Stop(); } catch { /* ignore */ }
+        try { HideIdRefPopup(); } catch { /* ignore */ }
         try { DisposeFsChromeOverlay(); } catch { /* ignore */ }
         try { _bbsPoller?.Stop(); } catch { /* ignore */ }
         try { _videoChrome?.HideChrome(); } catch { /* ignore */ }
@@ -2768,6 +3286,8 @@ public partial class MainWindow : Window
         try { _statsTimer?.Stop(); } catch { }
         try { _channelTimer?.Stop(); } catch { }
         try { _pointerTimer?.Stop(); } catch { }
+        try { _postCooldownTimer?.Stop(); } catch { }
+        try { _newHighlightTimer?.Stop(); } catch { }
         try { DisposeFsChromeOverlay(); } catch { }
         try { Mouse.OverrideCursor = null; } catch { }
 
