@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace DSPlayer.Services.Bbs;
 
@@ -10,6 +11,10 @@ public sealed class BbsWriteResult
     public string Message { get; init; } = "";
     public string? ResponseSnippet { get; init; }
     public bool NeedsConfirmRetry { get; init; }
+    /// <summary>Server rejected the post as too soon after the previous one.</summary>
+    public bool IsFloodLimited { get; init; }
+    /// <summary>Seconds to wait before retrying, when the board said so (or a safe default).</summary>
+    public int? RetryAfterSeconds { get; init; }
 }
 
 public sealed class BbsWriter : IDisposable
@@ -161,10 +166,22 @@ public sealed class BbsWriter : IDisposable
         catch { return Encoding.UTF8.GetString(bytes); }
     }
 
-    private static BbsWriteResult InterpretResponse(bool httpOk, string text, string kind)
+    private static readonly Regex FloodRemainSeconds = new(
+        @"(\d+)\s*(?:秒|sec)\s*たたないと",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex FloodAnySeconds = new(
+        @"(\d+)\s*(?:秒|sec)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Classify a write.cgi / bbs.cgi HTML (or plain) response.</summary>
+    public static BbsWriteResult InterpretResponse(bool httpOk, string text, string kind)
     {
         var flat = text.Replace("\r", "").Replace("\n", " ");
         var snippet = flat.Length > 200 ? flat[..200] : flat;
+
+        if (LooksLikeFloodLimit(text))
+            return FloodResult(text, snippet);
 
         // Success markers used by various boards
         if (text.Contains("書きこみました", StringComparison.Ordinal) ||
@@ -239,6 +256,60 @@ public sealed class BbsWriter : IDisposable
             Message = kind + " HTTP エラー",
             ResponseSnippet = snippet,
         };
+    }
+
+    private static bool LooksLikeFloodLimit(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        return text.Contains("連投", StringComparison.Ordinal) ||
+               text.Contains("投稿間隔", StringComparison.Ordinal) ||
+               text.Contains("連続投稿", StringComparison.Ordinal) ||
+               text.Contains("書き込み間隔", StringComparison.Ordinal) ||
+               text.Contains("短時間に", StringComparison.Ordinal) ||
+               text.Contains("多重書き込み", StringComparison.Ordinal) ||
+               text.Contains("もう少し待", StringComparison.Ordinal) ||
+               text.Contains("しばらく待", StringComparison.Ordinal) ||
+               text.Contains("ちょっと待", StringComparison.Ordinal) ||
+               text.Contains("秒たたないと", StringComparison.Ordinal) ||
+               text.Contains("秒待たないと", StringComparison.Ordinal) ||
+               text.Contains("たたないと書", StringComparison.Ordinal) ||
+               text.Contains("samba", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static BbsWriteResult FloodResult(string text, string snippet)
+    {
+        var seconds = TryParseFloodSeconds(text);
+        var message = seconds is > 0
+            ? "連投規制中です。あと " + seconds + " 秒待ってください。"
+            : "連投規制中です。";
+        return new BbsWriteResult
+        {
+            Success = false,
+            IsFloodLimited = true,
+            RetryAfterSeconds = seconds,
+            Message = message,
+            ResponseSnippet = snippet,
+        };
+    }
+
+    private static int? TryParseFloodSeconds(string text)
+    {
+        var prefer = FloodRemainSeconds.Match(text);
+        if (prefer.Success && TryReadSeconds(prefer.Groups[1].Value, out var remain))
+            return remain;
+
+        var m = FloodAnySeconds.Match(text);
+        if (m.Success && TryReadSeconds(m.Groups[1].Value, out var n))
+            return n;
+        return null;
+    }
+
+    private static bool TryReadSeconds(string raw, out int seconds)
+    {
+        seconds = 0;
+        return int.TryParse(raw, out seconds) && seconds is >= 1 and <= 300;
     }
 
     public void Dispose()

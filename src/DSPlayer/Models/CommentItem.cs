@@ -11,11 +11,19 @@ public sealed class CommentItem : INotifyPropertyChanged
     private string _displayHeader = "";
     private string _displayHeaderNoNumber = "";
     private bool _showResBadge;
+    private bool _showNumber = true;
+    private bool _showName = true;
+    private bool _showDate = true;
+    private int _idCount;
 
     public CommentItem(BbsPost post, AppSettings settings, bool isNew = false)
     {
         Post = post ?? throw new ArgumentNullException(nameof(post));
-        _isNew = isNew;
+        if (isNew)
+        {
+            _isNew = true;
+            HighlightUntilUtc = DateTime.UtcNow.AddSeconds(8);
+        }
         RefreshHeader(settings);
     }
 
@@ -23,6 +31,9 @@ public sealed class CommentItem : INotifyPropertyChanged
 
     public int Number => Post.Number;
     public string BodyText => Post.BodyText;
+    public string NameText => Post.Name;
+    public string DateId => Post.DateId;
+    public string? PosterId => Post.PosterId;
 
     public string DisplayHeader
     {
@@ -58,6 +69,52 @@ public sealed class CommentItem : INotifyPropertyChanged
         }
     }
 
+    public bool ShowNumber
+    {
+        get => _showNumber;
+        private set
+        {
+            if (_showNumber == value) return;
+            _showNumber = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool ShowName
+    {
+        get => _showName;
+        private set
+        {
+            if (_showName == value) return;
+            _showName = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool ShowDate
+    {
+        get => _showDate;
+        private set
+        {
+            if (_showDate == value) return;
+            _showDate = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public int IdCount
+    {
+        get => _idCount;
+        set
+        {
+            if (_idCount == value) return;
+            _idCount = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public DateTime HighlightUntilUtc { get; private set; }
+
     public bool IsNew
     {
         get => _isNew;
@@ -65,6 +122,9 @@ public sealed class CommentItem : INotifyPropertyChanged
         {
             if (_isNew == value) return;
             _isNew = value;
+            HighlightUntilUtc = value
+                ? DateTime.UtcNow.AddSeconds(8)
+                : DateTime.MinValue;
             OnPropertyChanged();
         }
     }
@@ -74,6 +134,9 @@ public sealed class CommentItem : INotifyPropertyChanged
         DisplayHeader = settings.FormatResHeader(Post, includeNumber: true);
         DisplayHeaderNoNumber = settings.FormatResHeader(Post, includeNumber: false);
         ShowResBadge = settings.ShowResNumber;
+        ShowNumber = settings.ShowResNumber;
+        ShowName = settings.ShowResName;
+        ShowDate = settings.ShowResDate;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

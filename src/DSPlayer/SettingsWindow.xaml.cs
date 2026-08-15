@@ -3,6 +3,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using DSPlayer.Models;
 using DSPlayer.Services.Bbs;
+using DSPlayer.Themes;
 
 namespace DSPlayer;
 
@@ -72,19 +73,17 @@ public partial class SettingsWindow : Window
         _suppressLive = true;
         try
         {
-            UiThemeBox.Items.Add("Classic — 従来ダーク");
-            UiThemeBox.Items.Add("Grok — 暖色クローム");
-            UiThemeBox.SelectedIndex =
-                settings.UiTheme.Equals("Classic", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            foreach (var t in UiTheme.All)
+                UiThemeBox.Items.Add(t.DisplayName);
+            UiThemeBox.SelectedIndex = IndexOfThemeId(UiTheme.All, settings.UiTheme, fallback: 1);
 
-            CommentThemeBox.Items.Add("Classic — 平面リスト");
-            CommentThemeBox.Items.Add("Grok — カード風");
-            CommentThemeBox.SelectedIndex =
-                settings.CommentListTheme.Equals("Classic", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            foreach (var t in CommentListTheme.All)
+                CommentThemeBox.Items.Add(t.DisplayName);
+            CommentThemeBox.SelectedIndex = IndexOfThemeId(CommentListTheme.All, settings.CommentListTheme, fallback: 1);
 
             try
             {
-                var t = Themes.UiTheme.FromId(settings.UiTheme);
+                var t = UiTheme.FromId(settings.UiTheme);
                 Background = new SolidColorBrush(t.SettingsWindowBg);
             }
             catch { /* ignore */ }
@@ -163,7 +162,7 @@ public partial class SettingsWindow : Window
             Settings.Sanitize();
             try
             {
-                var t = Themes.UiTheme.FromId(Settings.UiTheme);
+                var t = UiTheme.FromId(Settings.UiTheme);
                 Background = new SolidColorBrush(t.SettingsWindowBg);
             }
             catch { /* ignore */ }
@@ -175,10 +174,39 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private static int IndexOfThemeId<T>(IReadOnlyList<T> all, string? id, int fallback)
+        where T : class
+    {
+        for (var i = 0; i < all.Count; i++)
+        {
+            var itemId = all[i] switch
+            {
+                UiTheme u => u.Id,
+                CommentListTheme c => c.Id,
+                _ => null,
+            };
+            if (string.Equals(itemId, id, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        return fallback >= 0 && fallback < all.Count ? fallback : 0;
+    }
+
+    private static string ThemeIdAt<T>(IReadOnlyList<T> all, int index, string fallback)
+        where T : class
+    {
+        if (index < 0 || index >= all.Count) return fallback;
+        return all[index] switch
+        {
+            UiTheme u => u.Id,
+            CommentListTheme c => c.Id,
+            _ => fallback,
+        };
+    }
+
     private void WriteFieldsToSettings()
     {
-        Settings.UiTheme = UiThemeBox.SelectedIndex == 0 ? "Classic" : "Grok";
-        Settings.CommentListTheme = CommentThemeBox.SelectedIndex == 0 ? "Classic" : "Grok";
+        Settings.UiTheme = ThemeIdAt(UiTheme.All, UiThemeBox.SelectedIndex, "Grok");
+        Settings.CommentListTheme = ThemeIdAt(CommentListTheme.All, CommentThemeBox.SelectedIndex, "Grok");
 
         Settings.CommentHeaderFontFamily = string.IsNullOrWhiteSpace(HeaderFontFamilyBox.Text)
             ? "Meiryo UI" : HeaderFontFamilyBox.Text.Trim();

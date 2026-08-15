@@ -10,6 +10,9 @@ public sealed class BbsPost
     public string BodyText { get; init; } = "";
     public string? Title { get; init; }
 
+    /// <summary>2ch / したらば poster ID, or null when the board has none.</summary>
+    public string? PosterId => BbsPosterId.Extract(DateId);
+
     public string DisplayHeader =>
         $"{Number} ：{Name}：{DateId}";
 }

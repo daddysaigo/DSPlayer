@@ -35,6 +35,16 @@ public sealed class BbsThreadRef
         @"^https?://(?<host>[^/]+)/(?:test/)?read\.cgi/(?<board>[^/]+)/(?<thread>\d+)/?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    // 2ch-style board via read.cgi without a thread id
+    private static readonly Regex TwochReadBoard = new(
+        @"^https?://(?<host>[^/]+)/(?:test/)?read\.cgi/(?<board>[^/]+)/?$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // 2ch-style board top or subject.txt: https://bbs.jpnkn.com/ubereats/
+    private static readonly Regex TwochBoard = new(
+        @"^https?://(?<host>[^/]+)/(?<board>[a-zA-Z0-9_-]+)(?:/(?:subject\.txt)?)?$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     public required string ContactUrl { get; init; }
     public BbsBoardKind Kind { get; init; }
     public string? Host { get; init; }
@@ -59,6 +69,12 @@ public sealed class BbsThreadRef
         !string.IsNullOrWhiteSpace(WriteUrl) &&
         !string.IsNullOrWhiteSpace(ThreadId) &&
         !string.IsNullOrWhiteSpace(Board);
+
+    /// <summary>
+    /// Client-side wait after a successful post. See <see cref="BbsWriteCooldown"/>.
+    /// 0 = no extra client cooldown.
+    /// </summary>
+    public int DefaultPostCooldownSeconds => BbsWriteCooldown.DefaultIntervalSeconds(this);
 
     public static BbsThreadRef? TryParse(string? contactUrl)
     {
@@ -98,7 +114,7 @@ public sealed class BbsThreadRef
                 boardOnly: true);
         }
 
-        // --- 2ch-style (not shitaraba host) ---
+        // --- 2ch-style thread (not shitaraba host) ---
         var two = TwochRead.Match(url);
         if (two.Success && !IsShitarabaHost(url))
         {
@@ -107,6 +123,28 @@ public sealed class BbsThreadRef
             var thread = two.Groups["thread"].Value;
 
             return CreateTwoch(url, scheme, host, board, thread);
+        }
+
+        // --- 2ch-style board via read.cgi (no thread) ---
+        var twoBoardRead = TwochReadBoard.Match(url);
+        if (twoBoardRead.Success && !IsShitarabaHost(url))
+        {
+            return CreateTwoch(
+                url, scheme,
+                twoBoardRead.Groups["host"].Value,
+                twoBoardRead.Groups["board"].Value,
+                threadId: null);
+        }
+
+        // --- 2ch-style board top / subject.txt (jpnkn etc.) ---
+        var twoBoard = TwochBoard.Match(url);
+        if (twoBoard.Success && !IsShitarabaHost(url) && IsLikelyTwochBoardHost(url))
+        {
+            return CreateTwoch(
+                url, scheme,
+                twoBoard.Groups["host"].Value,
+                twoBoard.Groups["board"].Value,
+                threadId: null);
         }
 
         // Unknown: HTML of the URL itself
@@ -124,6 +162,35 @@ public sealed class BbsThreadRef
         url.Contains("jbbs.", StringComparison.OrdinalIgnoreCase) ||
         url.Contains("livedoor.jp", StringComparison.OrdinalIgnoreCase) ||
         url.Contains("livedoor.com", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Board-top URLs like https://bbs.jpnkn.com/ubereats/ should resolve via subject.txt.
+    /// Keep this conservative so random contact pages stay Unknown/HTML.
+    /// </summary>
+    private static bool IsLikelyTwochBoardHost(string url)
+    {
+        if (url.Contains("jpnkn", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("open2ch", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("bbspink", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("5ch.", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("2ch.", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("2ch.net", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // "bbs." in host (bbs.jpnkn.com already matched; also bbs.example.net/board/)
+        try
+        {
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                uri.Host.StartsWith("bbs.", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return url.Contains("/subject.txt", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static BbsThreadRef CreateShitaraba(
         string contactUrl,
@@ -165,8 +232,18 @@ public sealed class BbsThreadRef
     }
 
     private static BbsThreadRef CreateTwoch(
-        string contactUrl, string scheme, string host, string board, string threadId)
+        string contactUrl, string scheme, string host, string board, string? threadId)
     {
+        string? dat = null;
+        string? html = null;
+        string? write = null;
+        if (!string.IsNullOrEmpty(threadId))
+        {
+            dat = $"{scheme}://{host}/{board}/dat/{threadId}.dat";
+            html = $"{scheme}://{host}/test/read.cgi/{board}/{threadId}/";
+            write = $"{scheme}://{host}/test/bbs.cgi?guid=ON";
+        }
+
         return new BbsThreadRef
         {
             ContactUrl = contactUrl,
@@ -174,11 +251,11 @@ public sealed class BbsThreadRef
             Host = host,
             Board = board,
             ThreadId = threadId,
-            IsBoardOnly = false,
+            IsBoardOnly = string.IsNullOrEmpty(threadId),
             SubjectUrl = $"{scheme}://{host}/{board}/subject.txt",
-            DatUrl = $"{scheme}://{host}/{board}/dat/{threadId}.dat",
-            HtmlUrl = $"{scheme}://{host}/test/read.cgi/{board}/{threadId}/",
-            WriteUrl = $"{scheme}://{host}/test/bbs.cgi?guid=ON",
+            DatUrl = dat,
+            HtmlUrl = html,
+            WriteUrl = write,
             DefaultEncodingName = "shift_jis",
         };
     }

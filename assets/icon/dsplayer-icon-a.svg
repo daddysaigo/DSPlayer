@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <!-- A: Play on Tile (large triangle) -->
+  <rect x="0" y="0" width="256" height="256" rx="56" ry="56" fill="#2563EB"/>
+  <polygon points="88.37,58.88 206.13,128.00 88.37,197.12" fill="#FFFFFF"/>
+</svg>

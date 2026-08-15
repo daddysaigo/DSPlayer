@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <!-- C: Broadcast Lens -->
+  <rect x="0" y="0" width="256" height="256" rx="56" ry="56" fill="#2563EB"/>
+  <rect x="51.20" y="61.44" width="153.60" height="133.12"
+        rx="15.36" ry="15.36" fill="none" stroke="#FFFFFF" stroke-width="14.08"/>
+  <polygon points="112.38,97.28 163.58,128.00 112.38,158.72" fill="#FFFFFF"/>
+  <circle cx="191.49" cy="43.01" r="7.17" fill="#FFFFFF"/>
+  <circle cx="211.97" cy="43.01" r="7.17" fill="#FFFFFF"/>
+</svg>

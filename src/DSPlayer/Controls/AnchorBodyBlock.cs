@@ -49,6 +49,7 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
         Background = System.Windows.Media.Brushes.Transparent;
         Padding = new Thickness(0);
         Margin = new Thickness(0);
+        HorizontalContentAlignment = System.Windows.HorizontalAlignment.Left;
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
         // Allow mouse selection without looking like an edit field
@@ -59,7 +60,31 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
         {
             PagePadding = new Thickness(0),
             TextAlignment = TextAlignment.Left,
+            IsHyphenationEnabled = false,
         };
+        TryApplyCompactTemplate();
+        Loaded += (_, _) => ZeroDocumentInsets();
+    }
+
+    private void TryApplyCompactTemplate()
+    {
+        try
+        {
+            const string xaml =
+                "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='RichTextBox'>" +
+                "<Border Background='{TemplateBinding Background}' " +
+                "BorderBrush='{TemplateBinding BorderBrush}' " +
+                "BorderThickness='{TemplateBinding BorderThickness}' " +
+                "Padding='0'>" +
+                "<ScrollViewer x:Name='PART_ContentHost' Margin='0' Padding='0' " +
+                "HorizontalScrollBarVisibility='Disabled' VerticalScrollBarVisibility='Disabled'/>" +
+                "</Border></ControlTemplate>";
+            Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
+        }
+        catch
+        {
+            // keep default template
+        }
     }
 
     public string? Body
@@ -142,7 +167,7 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
                         var link = new Hyperlink(new Run(m.Value))
                         {
                             Foreground = AnchorBrush,
-                            TextDecorations = null,
+                            TextDecorations = System.Windows.TextDecorations.Underline,
                             Cursor = System.Windows.Input.Cursors.Hand,
                             NavigateUri = null,
                             Focusable = false,
@@ -175,8 +200,7 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
             Document.FontSize = FontSize;
             Document.FontWeight = FontWeight;
             Document.Foreground = Foreground;
-            Document.PagePadding = new Thickness(0);
-            Document.TextAlignment = TextAlignment.Left;
+            ZeroDocumentInsets();
             // Tight chat-style body (~1.2×). Auto/NaN uses font default; avoid large gaps.
             var lineH = Math.Max(FontSize * 1.2, FontSize + 2);
             Document.LineHeight = lineH;
@@ -188,9 +212,13 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
                 block.FontWeight = FontWeight;
                 block.Foreground = Foreground;
                 block.Margin = new Thickness(0);
+                block.Padding = new Thickness(0);
                 block.LineHeight = lineH;
                 if (block is Paragraph p)
                 {
+                    p.TextIndent = 0;
+                    p.Padding = new Thickness(0);
+                    p.Margin = new Thickness(0);
                     p.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
                     p.LineHeight = lineH;
                 }
@@ -200,6 +228,16 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
         {
             // ignore layout races
         }
+    }
+
+    private void ZeroDocumentInsets()
+    {
+        if (Document is null) return;
+        Document.PagePadding = new Thickness(0);
+        Document.TextAlignment = TextAlignment.Left;
+        Document.IsHyphenationEnabled = false;
+        Padding = new Thickness(0);
+        BorderThickness = new Thickness(0);
     }
 
     private void Link_Click(object sender, RoutedEventArgs e)

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <!-- B: DS Monogram (dark + cyan) -->
+  <rect x="0" y="0" width="256" height="256" rx="56" ry="56" fill="#0F172A"/>
+  <text x="128" y="128" text-anchor="middle" dominant-baseline="central"
+        font-family="Segoe UI, Arial, Helvetica, sans-serif" font-weight="700"
+        font-size="118" fill="#0EA5E9" letter-spacing="-4">DS</text>
+</svg>
