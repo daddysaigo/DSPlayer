@@ -153,6 +153,18 @@ public class BbsWriteTests
     }
 
     [Fact]
+    public void InterpretResponse_ShitarabaDonePage_IsSuccessEvenIfPleaseWait()
+    {
+        var r = BbsWriter.InterpretResponse(
+            httpOk: true,
+            text: "<title>書きこみました。</title>書きこみが終わりました。<br>しばらくお待ち下さい。1秒後に自動的にジャンプします。",
+            kind: "したらば");
+        Assert.True(r.Success);
+        Assert.False(r.IsFloodLimited);
+        Assert.False(r.NeedsConfirmRetry);
+    }
+
+    [Fact]
     public void WriteUrl_JpnknBoardOnly_NotYetWritable()
     {
         var t = BbsThreadRef.TryParse("https://bbs.jpnkn.com/ubereats/");
