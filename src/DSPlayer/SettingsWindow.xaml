@@ -32,7 +32,7 @@
                               Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
                               ToolTip="書込欄・ステータス・クロームの色。コメント欄とは独立して選べます"/>
                 </Grid>
-                <Grid Margin="0,0,0,14">
+                <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="110"/>
                         <ColumnDefinition Width="*"/>
@@ -41,6 +41,16 @@
                     <ComboBox x:Name="CommentThemeBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
                               Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
                               ToolTip="平面 / カード / 暗色など。UI テーマとは独立して選べます"/>
+                </Grid>
+                <Grid Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="勢いの見た目" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="MomentumStyleBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
+                              Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
+                              ToolTip="ヒート＝勢い ▰▰▰▱▱。シンプル＝以前の「勢い 58　普通」"/>
                 </Grid>
 
                 <!-- A: レス情報 -->
@@ -141,6 +151,9 @@
                 </Grid>
                 <CheckBox x:Name="ChkMessageNormalize" Content="本文を整形（空行・ｗｗｗ 圧縮）"
                           Foreground="#FFE8E8E8" Margin="0,3"/>
+                <CheckBox x:Name="ChkEmbedImages" Content="画像URLをコメント欄に表示（jpg / png / gif）"
+                          Foreground="#FFE8E8E8" Margin="0,8,0,3"
+                          ToolTip="拡張子が画像のURLだけ取得。同時2件・1.5MBまで。重いときはオフ"/>
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

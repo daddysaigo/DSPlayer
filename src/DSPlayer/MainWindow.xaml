@@ -309,32 +309,49 @@
                         Background="#FFF0F0F0"
                         BorderBrush="#FFD0D0D0"
                         BorderThickness="1,0,0,0">
-                    <!-- Theme applied at runtime via ApplyCommentListTheme -->
-                    <ListBox x:Name="CommentList"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Padding="4,0"
-                             Foreground="#FF000000"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.CanContentScroll="True"
-                             SelectionMode="Extended"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.VirtualizationMode="Recycling"
-                             VirtualizingPanel.ScrollUnit="Pixel"
-                             ScrollViewer.ScrollChanged="CommentScroll_ScrollChanged"
-                             SizeChanged="CommentList_SizeChanged"
-                             ItemContainerStyle="{StaticResource CommentItemStyleFlat}"
-                             ItemTemplate="{StaticResource CommentItemTemplateFlat}">
-                        <ListBox.Resources>
-                            <Style TargetType="ScrollBar" BasedOn="{StaticResource CommentScrollBar}"/>
-                        </ListBox.Resources>
-                        <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <VirtualizingStackPanel/>
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                    </ListBox>
+                    <Grid>
+                        <!-- Theme applied at runtime via ApplyCommentListTheme -->
+                        <ListBox x:Name="CommentList"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="4,0"
+                                 Foreground="#FF000000"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.CanContentScroll="True"
+                                 SelectionMode="Extended"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 VirtualizingPanel.ScrollUnit="Pixel"
+                                 ScrollViewer.ScrollChanged="CommentScroll_ScrollChanged"
+                                 SizeChanged="CommentList_SizeChanged"
+                                 ItemContainerStyle="{StaticResource CommentItemStyleFlat}"
+                                 ItemTemplate="{StaticResource CommentItemTemplateFlat}">
+                            <ListBox.Resources>
+                                <Style TargetType="ScrollBar" BasedOn="{StaticResource CommentScrollBar}"/>
+                            </ListBox.Resources>
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                        <!-- Shown while reading history; click resumes live follow -->
+                        <Button x:Name="NewPostsJumpButton"
+                                Panel.ZIndex="1"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Bottom"
+                                Margin="0,0,16,10"
+                                Padding="12,5"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Cursor="Hand"
+                                Focusable="False"
+                                Visibility="Collapsed"
+                                Click="NewPostsJumpButton_Click"
+                                ToolTip="最新レスへ移動し、以降は自動で追従します"
+                                Content="新着 ↓"/>
+                    </Grid>
                 </Border>
             </Grid>
 
@@ -509,7 +526,7 @@
                     Background="{StaticResource StatusBarBrush}"
                     Padding="8,4"
                     MinHeight="28">
-                <!-- Dock=Right is outermost first: Volume is far right, then stats, then status fills left -->
+                <!-- Dock=Right is outermost first: Volume, stats, momentum, then status fills left -->
                 <DockPanel LastChildFill="True">
                     <StackPanel DockPanel.Dock="Right"
                                 Orientation="Horizontal"
@@ -536,6 +553,64 @@
                                Margin="12,0,0,0"
                                VerticalAlignment="Center"
                                Text=""/>
+                    <!-- Left of resolution. Heat (default) or Simple — switch in settings. -->
+                    <StackPanel x:Name="MomentumPanel"
+                                DockPanel.Dock="Right"
+                                Orientation="Horizontal"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center">
+                        <StackPanel x:Name="MomentumSimple"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed">
+                            <TextBlock x:Name="MomentumText"
+                                       Foreground="{StaticResource ForegroundBrush}"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Text="勢い 0　過疎"/>
+                            <Border x:Name="MomentumBarTrack"
+                                    Width="64"
+                                    Height="3"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Background="#33888888"
+                                    SnapsToDevicePixels="True">
+                                <Border x:Name="MomentumBarFill"
+                                        HorizontalAlignment="Left"
+                                        Width="0"
+                                        Height="3"
+                                        Background="#FF888888"
+                                        SnapsToDevicePixels="True"/>
+                            </Border>
+                        </StackPanel>
+                        <StackPanel x:Name="MomentumHeat"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    ToolTip="直近5分のレスの勢い"
+                                    Visibility="Visible">
+                            <TextBlock x:Name="MomentumHeatPrefix"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,6,0"
+                                       Text="勢い(0)"/>
+                            <TextBlock x:Name="MomentumHeatFilled"
+                                       FontSize="13"
+                                       FontFamily="Yu Gothic UI, Segoe UI Symbol, Meiryo UI"
+                                       VerticalAlignment="Center"
+                                       Text=""/>
+                            <TextBlock x:Name="MomentumHeatEmpty"
+                                       FontSize="13"
+                                       FontFamily="Yu Gothic UI, Segoe UI Symbol, Meiryo UI"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.45"
+                                       Text="▱▱▱▱▱"/>
+                            <TextBlock x:Name="MomentumHeatMood"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="8,0,0,0"
+                                       Text="過疎"/>
+                        </StackPanel>
+                    </StackPanel>
                     <TextBlock x:Name="StatusText"
                                Foreground="{StaticResource ForegroundBrush}"
                                FontSize="11"
@@ -544,5 +619,6 @@
                                Text="準備中…"/>
                 </DockPanel>
             </Border>
+
     </Grid>
 </Window>

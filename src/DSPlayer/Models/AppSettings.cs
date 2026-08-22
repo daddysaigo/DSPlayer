@@ -33,11 +33,16 @@ public sealed class AppSettings
     /// </summary>
     public string CommentListTheme { get; set; } = "Grok";
 
+    /// <summary>Status-bar heat meter chrome. <c>Heat</c> (default) or <c>Simple</c> (original).</summary>
+    public string MomentumStyle { get; set; } = "Heat";
+
     public string? PcrBrowserPath { get; set; }
 
     public int BbsIntervalSeconds { get; set; } = 7;
     public string BbsUserAgent { get; set; } = "Monazilla/1.00 (DSPlayer/1.00)";
     public bool MessageNormalize { get; set; } = true;
+    /// <summary>Fetch jpg/png/gif URLs and show them inside the comment column.</summary>
+    public bool EmbedCommentImages { get; set; } = true;
 
     // レス情報行（番号・名前・日時）— meta; kept small so body dominates
     public string CommentHeaderFontFamily { get; set; } = "Meiryo UI";
@@ -204,10 +209,12 @@ public sealed class AppSettings
         to.CommentPanelVisible = from.CommentPanelVisible;
         to.UiTheme = from.UiTheme;
         to.CommentListTheme = from.CommentListTheme;
+        to.MomentumStyle = from.MomentumStyle;
         to.PcrBrowserPath = from.PcrBrowserPath;
         to.BbsIntervalSeconds = from.BbsIntervalSeconds;
         to.BbsUserAgent = from.BbsUserAgent;
         to.MessageNormalize = from.MessageNormalize;
+        to.EmbedCommentImages = from.EmbedCommentImages;
         to.CommentHeaderFontFamily = from.CommentHeaderFontFamily;
         to.CommentHeaderFontSize = from.CommentHeaderFontSize;
         to.CommentHeaderFontWeight = from.CommentHeaderFontWeight;
@@ -269,6 +276,7 @@ public sealed class AppSettings
 
         UiTheme = ThemeUi.NormalizeId(UiTheme);
         CommentListTheme = ThemeComments.NormalizeId(CommentListTheme);
+        MomentumStyle = ThreadMomentum.NormalizeStyle(MomentumStyle);
     }
 
     public bool HasWindowPlacement =>

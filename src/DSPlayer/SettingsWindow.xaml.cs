@@ -81,6 +81,11 @@ public partial class SettingsWindow : Window
                 CommentThemeBox.Items.Add(t.DisplayName);
             CommentThemeBox.SelectedIndex = IndexOfThemeId(CommentListTheme.All, settings.CommentListTheme, fallback: 1);
 
+            MomentumStyleBox.Items.Add("ヒート — ブロックメーター");
+            MomentumStyleBox.Items.Add("シンプル — 以前の表示");
+            MomentumStyleBox.SelectedIndex =
+                ThreadMomentum.IsHeatStyle(settings.MomentumStyle) ? 0 : 1;
+
             try
             {
                 var t = UiTheme.FromId(settings.UiTheme);
@@ -103,6 +108,7 @@ public partial class SettingsWindow : Window
             ChkShowDate.IsChecked = settings.ShowResDate;
             IntervalBox.Text = settings.BbsIntervalSeconds.ToString();
             ChkMessageNormalize.IsChecked = settings.MessageNormalize;
+            ChkEmbedImages.IsChecked = settings.EmbedCommentImages;
         }
         finally
         {
@@ -117,6 +123,7 @@ public partial class SettingsWindow : Window
         WireLiveCombo(BodyColorBox);
         WireLiveCombo(UiThemeBox);
         WireLiveCombo(CommentThemeBox);
+        WireLiveCombo(MomentumStyleBox);
         WireLiveText(HeaderFontSizeBox);
         WireLiveText(BodyFontSizeBox);
         WireLiveText(IntervalBox);
@@ -129,6 +136,8 @@ public partial class SettingsWindow : Window
         ChkShowDate.Unchecked += (_, _) => OnAnyChanged();
         ChkMessageNormalize.Checked += (_, _) => OnAnyChanged();
         ChkMessageNormalize.Unchecked += (_, _) => OnAnyChanged();
+        ChkEmbedImages.Checked += (_, _) => OnAnyChanged();
+        ChkEmbedImages.Unchecked += (_, _) => OnAnyChanged();
 
         UpdatePreview();
     }
@@ -207,6 +216,7 @@ public partial class SettingsWindow : Window
     {
         Settings.UiTheme = ThemeIdAt(UiTheme.All, UiThemeBox.SelectedIndex, "Grok");
         Settings.CommentListTheme = ThemeIdAt(CommentListTheme.All, CommentThemeBox.SelectedIndex, "Grok");
+        Settings.MomentumStyle = MomentumStyleBox.SelectedIndex == 1 ? "Simple" : "Heat";
 
         Settings.CommentHeaderFontFamily = string.IsNullOrWhiteSpace(HeaderFontFamilyBox.Text)
             ? "Meiryo UI" : HeaderFontFamilyBox.Text.Trim();
@@ -232,6 +242,7 @@ public partial class SettingsWindow : Window
         if (int.TryParse(IntervalBox.Text?.Trim(), out var sec))
             Settings.BbsIntervalSeconds = sec;
         Settings.MessageNormalize = ChkMessageNormalize.IsChecked == true;
+        Settings.EmbedCommentImages = ChkEmbedImages.IsChecked == true;
     }
 
     private static void FillFontCombo(System.Windows.Controls.ComboBox box)

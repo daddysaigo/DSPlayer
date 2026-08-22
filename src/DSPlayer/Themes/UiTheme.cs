@@ -30,6 +30,15 @@ public sealed class UiTheme
     public required MediaColor StatusMuted { get; init; }
     public required MediaColor Splitter { get; init; }
 
+    /// <summary>Thread-heat bar fill in the status strip (mid / 平常運転).</summary>
+    public required MediaColor MomentumBar { get; init; }
+    /// <summary>Quiet end of the heat meter (過疎).</summary>
+    public required MediaColor MomentumCool { get; init; }
+    /// <summary>Hot end of the heat meter (大盛況).</summary>
+    public required MediaColor MomentumHot { get; init; }
+    /// <summary>Bar thickness in px (keep 2–4).</summary>
+    public double MomentumBarHeight { get; init; } = 3;
+
     public required MediaColor CommentPanelBg { get; init; }
     public required MediaColor CommentPanelBorder { get; init; }
 
@@ -72,6 +81,10 @@ public sealed class UiTheme
         StatusFg = Rgb(0xE8, 0xE8, 0xE8),
         StatusMuted = Rgb(0xCC, 0xCC, 0xCC),
         Splitter = Rgb(0x3A, 0x3A, 0x3A),
+        MomentumBar = Rgb(0xD0, 0xA4, 0x48),
+        MomentumCool = Rgb(0x6E, 0x90, 0xB4),
+        MomentumHot = Rgb(0xE0, 0x5A, 0x38),
+        MomentumBarHeight = 2,
         CommentPanelBg = Rgb(0xF0, 0xF0, 0xF0),
         CommentPanelBorder = Rgb(0xD0, 0xD0, 0xD0),
         ChromeBarR = 0x1A, ChromeBarG = 0x1A, ChromeBarB = 0x1A,
@@ -105,6 +118,10 @@ public sealed class UiTheme
         StatusFg = Rgb(0xE8, 0xE2, 0xD8),
         StatusMuted = Rgb(0xB0, 0xA8, 0x9C),
         Splitter = Rgb(0x4A, 0x43, 0x3C),
+        MomentumBar = Rgb(0xE0, 0xA8, 0x4A),
+        MomentumCool = Rgb(0xB8, 0x96, 0x62),
+        MomentumHot = Rgb(0xF0, 0x78, 0x38),
+        MomentumBarHeight = 3,
         CommentPanelBg = Rgb(0xF3, 0xEF, 0xE8),
         CommentPanelBorder = Rgb(0xD8, 0xD2, 0xC8),
         ChromeBarR = 0x36, ChromeBarG = 0x31, ChromeBarB = 0x2C,
@@ -138,6 +155,10 @@ public sealed class UiTheme
         StatusFg = Rgb(0xE9, 0xD5, 0xFF),
         StatusMuted = Rgb(0x67, 0xE8, 0xF9),
         Splitter = Rgb(0x6D, 0x28, 0xD9),
+        MomentumBar = Rgb(0x67, 0xE8, 0xF9),
+        MomentumCool = Rgb(0x38, 0xB0, 0xC8),
+        MomentumHot = Rgb(0xF4, 0x2F, 0xA6),
+        MomentumBarHeight = 3,
         CommentPanelBg = Rgb(0x0F, 0x0A, 0x1A),
         CommentPanelBorder = Rgb(0x7C, 0x3A, 0xED),
         ChromeBarR = 0x12, ChromeBarG = 0x0C, ChromeBarB = 0x1E,
@@ -171,6 +192,10 @@ public sealed class UiTheme
         StatusFg = Rgb(0xFD, 0xE4, 0xEE),
         StatusMuted = Rgb(0xF9, 0xA8, 0xD4),
         Splitter = Rgb(0x9D, 0x4E, 0x6F),
+        MomentumBar = Rgb(0xF4, 0x72, 0xB6),
+        MomentumCool = Rgb(0xE8, 0x9A, 0xB8),
+        MomentumHot = Rgb(0xDB, 0x27, 0x7A),
+        MomentumBarHeight = 3,
         CommentPanelBg = Rgb(0xFF, 0xF1, 0xF5),
         CommentPanelBorder = Rgb(0xFB, 0xC4, 0xD8),
         ChromeBarR = 0x3A, ChromeBarG = 0x28, ChromeBarB = 0x32,
@@ -204,6 +229,10 @@ public sealed class UiTheme
         StatusFg = Rgb(0x86, 0xEF, 0xAC),
         StatusMuted = Rgb(0x4A, 0xDE, 0x80),
         Splitter = Rgb(0x14, 0x5A, 0x2A),
+        MomentumBar = Rgb(0x22, 0xC5, 0x5E),
+        MomentumCool = Rgb(0x16, 0x7A, 0x3A),
+        MomentumHot = Rgb(0x86, 0xEF, 0xAC),
+        MomentumBarHeight = 3,
         CommentPanelBg = Rgb(0x00, 0x00, 0x00),
         CommentPanelBorder = Rgb(0x16, 0xA3, 0x4A),
         ChromeBarR = 0x05, ChromeBarG = 0x0A, ChromeBarB = 0x05,
@@ -237,6 +266,10 @@ public sealed class UiTheme
         StatusFg = Rgb(0xFF, 0xED, 0xD5),
         StatusMuted = Rgb(0xFB, 0x92, 0x3C),
         Splitter = Rgb(0x7C, 0x2D, 0x12),
+        MomentumBar = Rgb(0xF9, 0x73, 0x16),
+        MomentumCool = Rgb(0xC4, 0x6A, 0x28),
+        MomentumHot = Rgb(0xFF, 0xB0, 0x20),
+        MomentumBarHeight = 3,
         CommentPanelBg = Rgb(0xFF, 0xF7, 0xED),
         CommentPanelBorder = Rgb(0xFD, 0xBA, 0x74),
         ChromeBarR = 0x28, ChromeBarG = 0x12, ChromeBarB = 0x0A,

@@ -53,10 +53,18 @@ public partial class MainWindow : Window
     /// </summary>
     private const int MaxDisplayedComments = 120;
     private int _threadResCount;
+    private readonly ThreadMomentum _momentum = new();
+    private const double MomentumBarMaxWidth = 64;
     private BbsPoller? _bbsPoller;
     private readonly BbsWriter _bbsWriter;
     private readonly PeerCastXmlClient _pcsXml = new();
     private bool _stickToBottom = true;
+    /// <summary>New posts arrived while the user was reading history.</summary>
+    private int _unseenNewPosts;
+    /// <summary>True while we ourselves are snapping to the latest res (ignore ScrollChanged).</summary>
+    private bool _programmaticCommentScroll;
+    /// <summary>True when this poll rebuilt the list (first load / thread replace).</summary>
+    private bool _commentsRebuiltThisUpdate;
     private string? _contactUrl;
     private BbsThreadRef? _writeThread;
     private string? _threadTitle;
@@ -176,11 +184,15 @@ public partial class MainWindow : Window
             "player.log");
 
         InitializeComponent();
+        CommentImageLoader.EmbedEnabled = _settings.EmbedCommentImages;
         CommentList.ItemsSource = _comments;
         // Bubbling >>N clicks from AnchorBodyBlock inside the item template
         CommentList.AddHandler(
             AnchorBodyBlock.AnchorClickEvent,
             new EventHandler<AnchorClickEventArgs>(CommentList_AnchorClick));
+        CommentList.AddHandler(
+            AnchorBodyBlock.ImageClickEvent,
+            new EventHandler<CommentImageClickEventArgs>(CommentImage_PreviewClick));
         CommentList.AddHandler(
             CommentHeaderBlock.LinkClickEvent,
             new EventHandler<HeaderLinkEventArgs>(CommentHeader_LinkClick));
@@ -832,7 +844,71 @@ public partial class MainWindow : Window
         StatusText.Text = left.Count > 0 ? string.Join("  |  ", left) : "DSPlayer";
         var right = BuildRightStatusParts();
         RightStatsText.Text = right.Count > 0 ? string.Join("  ", right) : "";
+        RefreshMomentumUi();
         UpdateWindowTitle();
+    }
+
+    private void ResetMomentum()
+    {
+        _momentum.Clear();
+        RefreshMomentumUi();
+    }
+
+    /// <summary>
+    /// Score from DAT post clocks in the last 5 minutes — including the first load,
+    /// so launch already shows whether the thread is hot.
+    /// </summary>
+    private void ApplyMomentumUpdate(BbsUpdatedEventArgs e)
+    {
+        _momentum.UpdateFromPosts(e.AllPosts, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Recompute the 5-minute window and paint the status-bar heat meter.
+    /// Always visible, including score 0. Chrome follows <see cref="AppSettings.MomentumStyle"/>.
+    /// </summary>
+    private void RefreshMomentumUi()
+    {
+        _momentum.Recalculate(DateTime.UtcNow);
+        var score = _momentum.Score;
+        MomentumPanel.Visibility = Visibility.Visible;
+
+        var heat = ThreadMomentum.IsHeatStyle(_settings.MomentumStyle);
+        MomentumHeat.Visibility = heat ? Visibility.Visible : Visibility.Collapsed;
+        MomentumSimple.Visibility = heat ? Visibility.Collapsed : Visibility.Visible;
+
+        if (!heat)
+        {
+            MomentumText.Text = ThreadMomentum.FormatDisplay(score);
+            MomentumBarFill.Width = MomentumBarMaxWidth * score / 100.0;
+            return;
+        }
+
+        ThreadMomentum.SplitMeter(score, out var filled, out var empty);
+        MomentumHeatPrefix.Text = "勢い(" + score + ")";
+        MomentumHeatFilled.Text = filled;
+        MomentumHeatEmpty.Text = empty;
+        MomentumHeatMood.Text = ThreadMomentum.HeatLabelFromScore(score);
+        PaintMomentumMeter(score);
+    }
+
+    private void PaintMomentumMeter(int score)
+    {
+        var t = UiTheme.FromId(_settings.UiTheme);
+        var muted = t.Brush(t.StatusMuted);
+        MomentumHeatPrefix.Foreground = muted;
+        MomentumHeatEmpty.Foreground = muted;
+
+        if (score <= 0)
+        {
+            MomentumHeatMood.Foreground = muted;
+            return;
+        }
+
+        var rgb = ThreadMomentum.MeterColorFromScore(score);
+        var heat = t.Brush(System.Windows.Media.Color.FromRgb(rgb.R, rgb.G, rgb.B));
+        MomentumHeatFilled.Foreground = heat;
+        MomentumHeatMood.Foreground = heat;
     }
 
     /// <summary>
@@ -925,6 +1001,7 @@ public partial class MainWindow : Window
         {
             BoardTitleText.Text = "掲示板URLなし";
             SetWriteEnabled(false);
+            ResetMomentum();
             return;
         }
 
@@ -933,6 +1010,7 @@ public partial class MainWindow : Window
         {
             BoardTitleText.Text = "掲示板を解釈できません";
             SetWriteEnabled(false);
+            ResetMomentum();
             return;
         }
 
@@ -940,6 +1018,7 @@ public partial class MainWindow : Window
         BoardTitleText.Text = thread.Board ?? "掲示板";
         SetWriteEnabled(thread.CanWrite || thread.Kind is BbsBoardKind.Shitaraba or BbsBoardKind.TwochStyle);
         _writeThread = thread.CanWrite ? thread : null;
+        ResetMomentum();
 
         _bbsPoller?.Dispose();
         var bbsClient = new BbsClient(
@@ -983,6 +1062,8 @@ public partial class MainWindow : Window
         {
             WriteLog("bbs auto-advance → " + newThreadId);
             _comments.Clear();
+            ClearUnseenNewPosts();
+            ResetMomentum();
             // combo will refresh via SubjectsUpdated / next Updated
             if (_bbsPoller?.Subjects is { Count: > 0 } list)
                 PopulateThreadCombo(list, selectId: newThreadId);
@@ -1095,6 +1176,8 @@ public partial class MainWindow : Window
 
         WriteLog("bbs switch thread → " + item.Id);
         _comments.Clear();
+        ClearUnseenNewPosts();
+        ResetMomentum();
         _bbsPoller.SwitchThread(item.Id);
         UpdatePostCooldownUi();
     }
@@ -1108,8 +1191,13 @@ public partial class MainWindow : Window
     {
         Dispatcher.InvokeAsync(() =>
         {
+            // Capture before adding rows — extent growth can look like "left the bottom".
+            var follow = _stickToBottom && !_userScrollingComments;
             ApplyCommentUpdate(e);
             _threadResCount = e.AllPosts.Count;
+
+            ApplyMomentumUpdate(e);
+            RefreshMomentumUi();
 
             if (!string.IsNullOrWhiteSpace(e.ThreadTitle))
                 _threadTitle = e.ThreadTitle;
@@ -1142,15 +1230,29 @@ public partial class MainWindow : Window
                 BoardTitleText.Text = e.ThreadTitle + "  (" + e.AllPosts.Count + ")";
             }
 
-            // New res → always jump to bottom (live chat)
-            if (e.NewPosts.Count > 0 || e.IsFirstLoad)
+            // Follow live only while the viewport is already on the latest res.
+            // Reading history must not be yanked back when a new post lands.
+            if (e.IsFirstLoad || _commentsRebuiltThisUpdate)
             {
-                _stickToBottom = true;
-                _userScrollingComments = false;
+                ResumeLiveComments();
                 ScheduleScrollCommentsToEnd();
             }
-            else if (_stickToBottom && !_userScrollingComments)
+            else if (e.NewPosts.Count > 0)
             {
+                if (follow)
+                {
+                    ResumeLiveComments();
+                    ScheduleScrollCommentsToEnd();
+                }
+                else
+                {
+                    _unseenNewPosts += e.NewPosts.Count;
+                    UpdateNewPostsJumpButton();
+                }
+            }
+            else if (follow)
+            {
+                ResumeLiveComments();
                 ScheduleScrollCommentsToEnd();
             }
 
@@ -1167,16 +1269,20 @@ public partial class MainWindow : Window
     /// </summary>
     private void ApplyCommentUpdate(BbsUpdatedEventArgs e)
     {
+        _commentsRebuiltThisUpdate = false;
+
         // First open / empty UI / thread replaced → show only the tail (latest)
         if (e.IsFirstLoad || _comments.Count == 0)
         {
             RebuildCommentsFromTail(e.AllPosts, highlightNew: false);
+            _commentsRebuiltThisUpdate = true;
             return;
         }
 
         if (e.AllPosts.Count == 0)
         {
             _comments.Clear();
+            _commentsRebuiltThisUpdate = true;
             return;
         }
 
@@ -1186,6 +1292,7 @@ public partial class MainWindow : Window
         if (lastAll < lastUi || e.AllPosts.Count < _threadResCount && e.AllPosts.Count < lastUi)
         {
             RebuildCommentsFromTail(e.AllPosts, highlightNew: false);
+            _commentsRebuiltThisUpdate = true;
             return;
         }
 
@@ -1507,7 +1614,7 @@ public partial class MainWindow : Window
                 ClearWriteBox();
                 _writeCooldown.NoteSuccess(thread);
                 StartPostCooldownClock();
-                _stickToBottom = true;
+                ResumeLiveComments();
                 await Task.Delay(800).ConfigureAwait(true);
                 _bbsPoller?.RequestRefresh();
             }
@@ -1521,7 +1628,7 @@ public partial class MainWindow : Window
                     ClearWriteBox();
                     _writeCooldown.NoteSuccess(thread);
                     StartPostCooldownClock();
-                    _stickToBottom = true;
+                    ResumeLiveComments();
                     await Task.Delay(800).ConfigureAwait(true);
                     _bbsPoller?.RequestRefresh();
                 }
@@ -1603,45 +1710,100 @@ public partial class MainWindow : Window
         // Stay enabled so the number isn't drawn with the disabled gray brush
     }
 
+    private bool IsFollowingLiveComments => _stickToBottom && !_userScrollingComments;
+
+    private void ResumeLiveComments()
+    {
+        _stickToBottom = true;
+        _userScrollingComments = false;
+        ClearUnseenNewPosts();
+    }
+
+    private void PauseLiveComments()
+    {
+        _stickToBottom = false;
+        _userScrollingComments = true;
+    }
+
+    private void ClearUnseenNewPosts()
+    {
+        if (_unseenNewPosts == 0 && NewPostsJumpButton.Visibility == Visibility.Collapsed)
+            return;
+        _unseenNewPosts = 0;
+        UpdateNewPostsJumpButton();
+    }
+
+    private void UpdateNewPostsJumpButton()
+    {
+        if (_unseenNewPosts <= 0)
+        {
+            NewPostsJumpButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        NewPostsJumpButton.Content = _unseenNewPosts == 1
+            ? "新着 ↓"
+            : "新着 " + _unseenNewPosts + " ↓";
+        NewPostsJumpButton.Visibility = Visibility.Visible;
+    }
+
+    private void NewPostsJumpButton_Click(object sender, RoutedEventArgs e)
+    {
+        ResumeLiveComments();
+        ScheduleScrollCommentsToEnd();
+    }
+
     private void CommentScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        if (_programmaticCommentScroll) return;
         if (e.OriginalSource is not ScrollViewer sv) return;
 
-        // Viewport resized while stuck to bottom → keep latest pinned (grow/shrink from top)
-        if (e.ViewportHeightChange != 0 && _stickToBottom && !_userScrollingComments)
+        // Content grew or viewport resized while following → keep the latest pinned
+        if (IsFollowingLiveComments &&
+            (e.ExtentHeightChange != 0 || e.ViewportHeightChange != 0))
         {
             ScrollCommentsToEndCore();
             return;
         }
 
+        // Virtualizing panel can report 0 during recycle; don't treat that as "at bottom".
         if (sv.ScrollableHeight <= 0)
-        {
-            _stickToBottom = true;
-            _userScrollingComments = false;
             return;
-        }
 
-        // Near bottom = stick (pixel tolerance)
-        _stickToBottom = sv.ScrollableHeight - sv.VerticalOffset < 40;
-        _userScrollingComments = !_stickToBottom;
+        var atBottom = sv.ScrollableHeight - sv.VerticalOffset < 40;
+        if (atBottom)
+        {
+            if (!IsFollowingLiveComments || _unseenNewPosts > 0)
+                ResumeLiveComments();
+        }
+        else if (e.VerticalChange != 0)
+        {
+            PauseLiveComments();
+        }
     }
 
     private void CommentList_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (!e.HeightChanged) return;
-        if (!_stickToBottom || _userScrollingComments) return;
+        if (!IsFollowingLiveComments) return;
         ScheduleScrollCommentsToEnd();
     }
 
     private void ScheduleScrollCommentsToEnd()
     {
         // Virtualizing list needs layout pass(es) before ScrollIntoView works on last item
+        _programmaticCommentScroll = true;
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ScrollCommentsToEndCore));
-        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(ScrollCommentsToEndCore));
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            ScrollCommentsToEndCore();
+            _programmaticCommentScroll = false;
+        }));
     }
 
     private void ScrollCommentsToEndCore()
     {
+        if (!_stickToBottom) return;
         if (CommentList.Items.Count == 0) return;
         try
         {
@@ -1706,6 +1868,38 @@ public partial class MainWindow : Window
         e.Handled = true;
         HideIdRefPopup();
         QuoteResNumber(item.Number);
+    }
+
+    private CommentImageWindow? _imagePopup;
+
+    private void CommentImage_PreviewClick(object? sender, CommentImageClickEventArgs e)
+    {
+        e.Handled = true;
+        ShowImagePopup(e.Image);
+    }
+
+    private void ShowImagePopup(LoadedCommentImage image)
+    {
+        try
+        {
+            if (_imagePopup is null)
+            {
+                _imagePopup = new CommentImageWindow();
+                _imagePopup.Closed += (_, _) => _imagePopup = null;
+            }
+
+            _imagePopup.ShowImage(image, this);
+        }
+        catch (Exception ex)
+        {
+            WriteLog("image popup: " + ex.Message);
+        }
+    }
+
+    private void CloseImagePopup()
+    {
+        try { _imagePopup?.Close(); } catch { /* ignore */ }
+        _imagePopup = null;
     }
 
     private void IdRefOverlay_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e) => CancelIdRefLeave();
@@ -1934,8 +2128,7 @@ public partial class MainWindow : Window
 
         try
         {
-            _userScrollingComments = true;
-            _stickToBottom = false;
+            PauseLiveComments();
             CommentList.SelectedItem = target;
             CommentList.ScrollIntoView(target);
             // Brief visual pulse via IsNew
@@ -2389,6 +2582,10 @@ public partial class MainWindow : Window
                 ToggleFullscreen();
                 e.Handled = true;
                 break;
+            case Key.Escape when _imagePopup is { IsVisible: true }:
+                CloseImagePopup();
+                e.Handled = true;
+                break;
             case Key.Escape when _isFullscreen:
                 ExitFullscreen();
                 e.Handled = true;
@@ -2406,9 +2603,8 @@ public partial class MainWindow : Window
         SetCommentVisible(MenuCommentVisible.IsChecked == true);
     private void Menu_ScrollBottom_Click(object sender, RoutedEventArgs e)
     {
-        _stickToBottom = true;
-        _userScrollingComments = false;
-        ScrollCommentsToEnd();
+        ResumeLiveComments();
+        ScheduleScrollCommentsToEnd();
     }
     private void Menu_CopyComment_Click(object sender, RoutedEventArgs e) => CopySelectedComments();
     private void Menu_OpenPcrBrowser_Click(object sender, RoutedEventArgs e) => OpenPcrBrowser();
@@ -2507,6 +2703,7 @@ public partial class MainWindow : Window
     /// </param>
     private void ApplySettingsLive(bool restartBbs = true)
     {
+        CommentImageLoader.EmbedEnabled = _settings.EmbedCommentImages;
         ApplyCommentFont();
         ApplyUiTheme(); // includes ApplyCommentListTheme at end
         ApplyCommentListTheme();
@@ -2726,6 +2923,17 @@ public partial class MainWindow : Window
             VolumeText.Foreground = t.Brush(t.StatusFg);
             RightStatsText.Foreground = t.Brush(t.StatusMuted);
 
+            MomentumText.Foreground = t.Brush(t.StatusFg);
+            var barH = Math.Clamp(t.MomentumBarHeight, 2, 4);
+            MomentumBarTrack.Height = barH;
+            MomentumBarFill.Height = barH;
+            MomentumBarFill.Background = t.Brush(t.MomentumBar);
+            var track = t.MomentumBar;
+            MomentumBarTrack.Background = t.Brush(
+                System.Windows.Media.Color.FromArgb(0x40, track.R, track.G, track.B));
+
+            PaintMomentumMeter(_momentum.Score);
+
             CommentSplitter.Background = t.Brush(t.Splitter);
 
             // Application-level brushes (settings dialog / status StaticResource consumers)
@@ -2818,6 +3026,21 @@ public partial class MainWindow : Window
             CommentPanel.Background = freeze(ct.PanelBg);
             CommentPanel.BorderBrush = freeze(ct.PanelBorder);
             CommentList.Padding = ct.ListPadding;
+
+            var jumpAccent = ct.CardNewAccent;
+            var jumpLuma = 0.299 * jumpAccent.R + 0.587 * jumpAccent.G + 0.114 * jumpAccent.B;
+            var jumpFg = jumpLuma > 160
+                ? System.Windows.Media.Colors.Black
+                : System.Windows.Media.Colors.White;
+            NewPostsJumpButton.Background = freeze(jumpAccent);
+            NewPostsJumpButton.Foreground = freeze(jumpFg);
+            NewPostsJumpButton.BorderBrush = freeze(jumpAccent);
+            NewPostsJumpButton.BorderThickness = new Thickness(0);
+            try
+            {
+                NewPostsJumpButton.Template = CreateFlatButtonTemplate(jumpAccent, jumpFg, jumpAccent);
+            }
+            catch { /* keep default chrome */ }
 
             if (ct.Layout == CommentLayoutKind.Card)
             {
@@ -3273,6 +3496,7 @@ public partial class MainWindow : Window
         try { _idRefLeaveTimer?.Stop(); } catch { /* ignore */ }
         try { _idRefHoverTimer?.Stop(); } catch { /* ignore */ }
         try { HideIdRefPopup(); } catch { /* ignore */ }
+        try { CloseImagePopup(); } catch { /* ignore */ }
         try { DisposeFsChromeOverlay(); } catch { /* ignore */ }
         try { _bbsPoller?.Stop(); } catch { /* ignore */ }
         try { _videoChrome?.HideChrome(); } catch { /* ignore */ }
