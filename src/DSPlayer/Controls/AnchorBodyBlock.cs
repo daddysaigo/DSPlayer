@@ -1,21 +1,21 @@
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using DSPlayer.Services;
+using DSPlayer.Services.Bbs;
 
 namespace DSPlayer.Controls;
 
 /// <summary>
-/// Selectable comment body (read-only <see cref="RichTextBox"/>) with clickable &gt;&gt;N anchors.
+/// Selectable comment body (read-only <see cref="RichTextBox"/>) with clickable &gt;&gt;N
+/// anchors, http(s)/ttp(s) links, and optional inline images.
 /// Raises a bubbling <see cref="AnchorClickEvent"/> with the target res number.
 /// </summary>
 public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
 {
-    private static readonly Regex AnchorRegex = new(
-        @"(>>|＞＞|>)(\d{1,4})",
-        RegexOptions.Compiled);
+    private readonly List<CommentImageView> _images = new();
 
     public static readonly DependencyProperty BodyProperty =
         DependencyProperty.Register(
@@ -29,6 +29,13 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
             nameof(AnchorClick),
             RoutingStrategy.Bubble,
             typeof(EventHandler<AnchorClickEventArgs>),
+            typeof(AnchorBodyBlock));
+
+    public static readonly RoutedEvent ImageClickEvent =
+        EventManager.RegisterRoutedEvent(
+            "ImageClick",
+            RoutingStrategy.Bubble,
+            typeof(EventHandler<CommentImageClickEventArgs>),
             typeof(AnchorBodyBlock));
 
     private static readonly System.Windows.Media.Brush AnchorBrush =
@@ -63,7 +70,11 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
             IsHyphenationEnabled = false,
         };
         TryApplyCompactTemplate();
-        Loaded += (_, _) => ZeroDocumentInsets();
+        Loaded += (_, _) =>
+        {
+            ZeroDocumentInsets();
+            ApplyPageWidth();
+        };
     }
 
     private void TryApplyCompactTemplate()
@@ -99,6 +110,12 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
         remove => RemoveHandler(AnchorClickEvent, value);
     }
 
+    public event EventHandler<CommentImageClickEventArgs> ImageClick
+    {
+        add => AddHandler(ImageClickEvent, value);
+        remove => RemoveHandler(ImageClickEvent, value);
+    }
+
     /// <summary>Currently selected text, if any.</summary>
     public string SelectedText
     {
@@ -130,65 +147,126 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
 
     private void RebuildDocument(string? text)
     {
+        _images.Clear();
         var doc = Document ?? new FlowDocument();
         doc.Blocks.Clear();
         doc.PagePadding = new Thickness(0);
         doc.TextAlignment = TextAlignment.Left;
 
-        var para = new Paragraph
-        {
-            Margin = new Thickness(0),
-            Padding = new Thickness(0),
-            TextAlignment = TextAlignment.Left,
-        };
+        var pageW = ColumnWidth();
+        Paragraph? para = null;
 
-        if (!string.IsNullOrEmpty(text))
+        foreach (var seg in CommentBodyParser.Parse(text))
         {
-            var matches = AnchorRegex.Matches(text);
-            if (matches.Count == 0)
+            switch (seg.Kind)
             {
-                para.Inlines.Add(new Run(text));
-            }
-            else
-            {
-                var idx = 0;
-                foreach (Match m in matches)
-                {
-                    if (m.Index > idx)
-                        para.Inlines.Add(new Run(text[idx..m.Index]));
-
-                    var numStr = m.Groups[2].Value;
-                    if (!int.TryParse(numStr, out var num) || num <= 0)
+                case CommentSegmentKind.Text:
+                    EnsurePara(ref para).Inlines.Add(new Run(seg.Text));
+                    break;
+                case CommentSegmentKind.Anchor:
+                    EnsurePara(ref para).Inlines.Add(MakeAnchorLink(seg));
+                    break;
+                case CommentSegmentKind.Url:
+                    EnsurePara(ref para).Inlines.Add(MakeUrlLink(seg));
+                    break;
+                case CommentSegmentKind.Image:
+                    EnsurePara(ref para).Inlines.Add(MakeUrlLink(seg));
+                    if (CommentImageLoader.EmbedEnabled && !string.IsNullOrEmpty(seg.NavigateUrl))
                     {
-                        para.Inlines.Add(new Run(m.Value));
-                    }
-                    else
-                    {
-                        var link = new Hyperlink(new Run(m.Value))
+                        FlushPara(doc, ref para);
+                        var img = new CommentImageView();
+                        img.BeginLoad(seg.NavigateUrl, pageW);
+                        _images.Add(img);
+                        var host = new Border
                         {
-                            Foreground = AnchorBrush,
-                            TextDecorations = System.Windows.TextDecorations.Underline,
+                            Child = img,
+                            Margin = new Thickness(0, 4, 0, 6),
+                            // Transparent still hit-tests; FlowDocument Image clicks don't bubble out.
+                            Background = System.Windows.Media.Brushes.Transparent,
                             Cursor = System.Windows.Input.Cursors.Hand,
-                            NavigateUri = null,
-                            Focusable = false,
-                            ToolTip = "レス " + num + " へ移動",
-                            Tag = num,
+                            SnapsToDevicePixels = true,
                         };
-                        link.Click += Link_Click;
-                        para.Inlines.Add(link);
+                        doc.Blocks.Add(new BlockUIContainer(host) { Margin = new Thickness(0) });
                     }
-
-                    idx = m.Index + m.Length;
-                }
-
-                if (idx < text.Length)
-                    para.Inlines.Add(new Run(text[idx..]));
+                    break;
             }
         }
 
-        doc.Blocks.Add(para);
+        FlushPara(doc, ref para);
+        if (doc.Blocks.Count == 0)
+            doc.Blocks.Add(CreateParagraph());
+
         Document = doc;
+        ApplyPageWidth();
         ApplyTypographyToDocument();
+    }
+
+    private static Paragraph CreateParagraph() => new()
+    {
+        Margin = new Thickness(0),
+        Padding = new Thickness(0),
+        TextAlignment = TextAlignment.Left,
+    };
+
+    private static Paragraph EnsurePara(ref Paragraph? para) => para ??= CreateParagraph();
+
+    private static void FlushPara(FlowDocument doc, ref Paragraph? para)
+    {
+        if (para is { Inlines.Count: > 0 })
+            doc.Blocks.Add(para);
+        para = null;
+    }
+
+    private Hyperlink MakeAnchorLink(CommentSegment seg)
+    {
+        var link = new Hyperlink(new Run(seg.Text))
+        {
+            Foreground = AnchorBrush,
+            TextDecorations = System.Windows.TextDecorations.Underline,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            NavigateUri = null,
+            Focusable = false,
+            ToolTip = "レス " + seg.ResNumber + " へ移動",
+            Tag = seg.ResNumber,
+        };
+        link.Click += Link_Click;
+        return link;
+    }
+
+    private Hyperlink MakeUrlLink(CommentSegment seg)
+    {
+        var href = seg.NavigateUrl ?? seg.Text;
+        var link = new Hyperlink(new Run(seg.Text))
+        {
+            Foreground = AnchorBrush,
+            TextDecorations = System.Windows.TextDecorations.Underline,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            NavigateUri = null,
+            Focusable = false,
+            ToolTip = href,
+            Tag = href,
+        };
+        link.Click += Url_Click;
+        return link;
+    }
+
+    private double ColumnWidth() =>
+        Math.Max(32, ActualWidth > 1 ? ActualWidth - 4 : 280);
+
+    private void ApplyPageWidth()
+    {
+        var w = ColumnWidth();
+        if (Document is not null)
+            Document.PageWidth = w;
+        foreach (var img in _images)
+            img.SetColumnWidth(w);
+    }
+
+    protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+    {
+        base.OnRenderSizeChanged(sizeInfo);
+        if (sizeInfo.WidthChanged)
+            ApplyPageWidth();
     }
 
     private void ApplyTypographyToDocument()
@@ -207,12 +285,14 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
 
             foreach (var block in Document.Blocks)
             {
+                block.Margin = new Thickness(0);
+                block.Padding = new Thickness(0);
+                if (block is BlockUIContainer)
+                    continue;
                 block.FontFamily = FontFamily;
                 block.FontSize = FontSize;
                 block.FontWeight = FontWeight;
                 block.Foreground = Foreground;
-                block.Margin = new Thickness(0);
-                block.Padding = new Thickness(0);
                 block.LineHeight = lineH;
                 if (block is Paragraph p)
                 {
@@ -247,11 +327,79 @@ public sealed class AnchorBodyBlock : System.Windows.Controls.RichTextBox
             RaiseEvent(new AnchorClickEventArgs(AnchorClickEvent, this, num));
     }
 
+    private void Url_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Hyperlink { Tag: string href })
+            CommentImageLoader.OpenInBrowser(href);
+    }
+
+    private bool _pendingImageClick;
+
     protected override void OnPreviewMouseLeftButtonDown(MouseButtonEventArgs e)
     {
+        var img = HitImageView(e);
+        if (img is not null)
+        {
+            // Swallow Down so the RTB doesn't capture the mouse. Open on Up
+            // so the same click cannot close a newly shown window.
+            _pendingImageClick = true;
+            e.Handled = true;
+            return;
+        }
+
+        _pendingImageClick = false;
         // Keep focus for selection; stop ListBox from treating this as item-select only
         Focus();
         base.OnPreviewMouseLeftButtonDown(e);
+    }
+
+    protected override void OnPreviewMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        if (_pendingImageClick)
+        {
+            _pendingImageClick = false;
+            var img = HitImageView(e);
+            if (img is not null && RaiseImageClick(img.LoadedImage))
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
+        base.OnPreviewMouseLeftButtonUp(e);
+    }
+
+    private CommentImageView? HitImageView(System.Windows.Input.MouseEventArgs e)
+    {
+        var img = FindImageView(e.OriginalSource as DependencyObject);
+        if (img is not null)
+            return img;
+        try { return FindImageView(InputHitTest(e.GetPosition(this)) as DependencyObject); }
+        catch { return null; }
+    }
+
+    internal bool RaiseImageClick(LoadedCommentImage? image)
+    {
+        if (image is null)
+            return false;
+        RaiseEvent(new CommentImageClickEventArgs(ImageClickEvent, this, image));
+        return true;
+    }
+
+    private static CommentImageView? FindImageView(DependencyObject? start)
+    {
+        for (var d = start; d is not null;)
+        {
+            if (d is CommentImageView v)
+                return v;
+            if (d is Border { Child: CommentImageView img })
+                return img;
+            d = d is Visual
+                ? VisualTreeHelper.GetParent(d)
+                : LogicalTreeHelper.GetParent(d);
+        }
+        return null;
     }
 }
 
