@@ -65,6 +65,7 @@ public sealed class AppSettings
     public string? CommentFontFamily { get; set; }
     public double? CommentFontSize { get; set; }
 
+    public bool WindowSnapEnabled { get; set; } = true;
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public double? WindowWidth { get; set; }
@@ -228,6 +229,7 @@ public sealed class AppSettings
         to.CommentBodyColor = from.CommentBodyColor;
         to.CommentFontFamily = from.CommentFontFamily;
         to.CommentFontSize = from.CommentFontSize;
+        to.WindowSnapEnabled = from.WindowSnapEnabled;
         to.WindowLeft = from.WindowLeft;
         to.WindowTop = from.WindowTop;
         to.WindowWidth = from.WindowWidth;
