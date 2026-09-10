@@ -84,6 +84,7 @@ public partial class MainWindow : Window
     private bool _userScrollingComments;
 
     private WindowSizingHook? _sizingHook;
+    private WindowSnapHook? _snapHook;
     private double _videoAspect = 16.0 / 9.0;
     private bool _initialAspectApplied;
     private DispatcherTimer? _pointerTimer;
@@ -221,6 +222,7 @@ public partial class MainWindow : Window
         {
             ContextMenu.Opened += (_, _) =>
             {
+                MenuReconnect.IsEnabled = !_closing && _playerReady && _launchArgs.HasStream;
                 _lbuttonWasDown = false;
                 try { Mouse.OverrideCursor = null; } catch { /* ignore */ }
             };
@@ -405,6 +407,8 @@ public partial class MainWindow : Window
             GetTopChromeDip = () => 0, // overlay does not consume layout space
         };
         _sizingHook.Attach();
+        _snapHook = new WindowSnapHook(this, () => _settings.WindowSnapEnabled && !_isFullscreen);
+        _snapHook.Attach();
         WriteLog("WM_SIZING hook attached (video-area AR); video-edge resize via pointer poll");
     }
 
@@ -2287,8 +2291,9 @@ public partial class MainWindow : Window
             // quit = intentional teardown
             if (string.Equals(args.Reason, "quit", StringComparison.OrdinalIgnoreCase))
                 return;
-            // Our ForceReconnect stop — retry already scheduled
-            if (_suppressEndFileRetry)
+            // Stop/end-file arrives asynchronously, often after ForceReconnect returns.
+            // Keep its scheduled retry instead of scheduling another from this late event.
+            if (_suppressEndFileRetry || _reconnectPending)
                 return;
 
             // Live PeerCast: any natural end (eof/error/stop/redirect/…) → reconnect
@@ -2476,6 +2481,7 @@ public partial class MainWindow : Window
         _retryCts = new CancellationTokenSource();
 
         var cts = _retryCts;
+        var retryToken = cts.Token;
         var gen = _reconnectGeneration;
         var attempt = Math.Max(1, _loadAttempts);
 
@@ -2502,11 +2508,11 @@ public partial class MainWindow : Window
         {
             try
             {
-                await Task.Delay(delayMs, cts.Token).ConfigureAwait(false);
-                if (_closing || gen != _reconnectGeneration) return;
+                await Task.Delay(delayMs, retryToken).ConfigureAwait(false);
+                if (_closing || retryToken.IsCancellationRequested || gen != _reconnectGeneration) return;
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    if (_closing || gen != _reconnectGeneration) return;
+                    if (_closing || retryToken.IsCancellationRequested || gen != _reconnectGeneration) return;
                     TryLoadOnce();
                 });
             }
@@ -2599,6 +2605,19 @@ public partial class MainWindow : Window
 
     private void Menu_Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
     private void Menu_Pause_Click(object sender, RoutedEventArgs e) => _player?.TogglePause();
+    private void Menu_Reconnect_Click(object sender, RoutedEventArgs e)
+    {
+        if (_closing || !_playerReady || !_launchArgs.HasStream) return;
+
+        WriteLog("manual reconnect requested");
+        // Restart at the short retry delay even during an automatic backoff. The new
+        // generation invalidates any previous retry already queued on the dispatcher.
+        _reconnectGeneration++;
+        _loadAttempts = 0;
+        _reconnectPending = false;
+        ForceReconnect("手動で再接続します…");
+    }
+
     private void Menu_CommentVisible_Click(object sender, RoutedEventArgs e) =>
         SetCommentVisible(MenuCommentVisible.IsChecked == true);
     private void Menu_ScrollBottom_Click(object sender, RoutedEventArgs e)
@@ -3529,6 +3548,8 @@ public partial class MainWindow : Window
 
         try { _sizingHook?.Dispose(); } catch { }
         _sizingHook = null;
+        try { _snapHook?.Dispose(); } catch { }
+        _snapHook = null;
 
         if (_commentVisible && CommentColumn.Width.IsAbsolute && CommentColumn.Width.Value > 120)
             _settings.CommentPanelWidth = CommentColumn.Width.Value;

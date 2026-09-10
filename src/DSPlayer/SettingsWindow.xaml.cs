@@ -109,6 +109,7 @@ public partial class SettingsWindow : Window
             IntervalBox.Text = settings.BbsIntervalSeconds.ToString();
             ChkMessageNormalize.IsChecked = settings.MessageNormalize;
             ChkEmbedImages.IsChecked = settings.EmbedCommentImages;
+            ChkWindowSnap.IsChecked = settings.WindowSnapEnabled;
         }
         finally
         {
@@ -138,6 +139,8 @@ public partial class SettingsWindow : Window
         ChkMessageNormalize.Unchecked += (_, _) => OnAnyChanged();
         ChkEmbedImages.Checked += (_, _) => OnAnyChanged();
         ChkEmbedImages.Unchecked += (_, _) => OnAnyChanged();
+        ChkWindowSnap.Checked += (_, _) => OnAnyChanged();
+        ChkWindowSnap.Unchecked += (_, _) => OnAnyChanged();
 
         UpdatePreview();
     }
@@ -243,6 +246,7 @@ public partial class SettingsWindow : Window
             Settings.BbsIntervalSeconds = sec;
         Settings.MessageNormalize = ChkMessageNormalize.IsChecked == true;
         Settings.EmbedCommentImages = ChkEmbedImages.IsChecked == true;
+        Settings.WindowSnapEnabled = ChkWindowSnap.IsChecked == true;
     }
 
     private static void FillFontCombo(System.Windows.Controls.ComboBox box)

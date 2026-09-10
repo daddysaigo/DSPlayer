@@ -37,6 +37,7 @@
         <ContextMenu>
             <MenuItem Header="フルスクリーン" Click="Menu_Fullscreen_Click"/>
             <MenuItem Header="一時停止 / 再開" Click="Menu_Pause_Click"/>
+            <MenuItem x:Name="MenuReconnect" Header="再接続" IsEnabled="False" Click="Menu_Reconnect_Click"/>
             <Separator/>
             <MenuItem x:Name="MenuCommentVisible" Header="コメントを表示" IsCheckable="True" IsChecked="True" Click="Menu_CommentVisible_Click"/>
             <MenuItem Header="コメントを最下部へ" Click="Menu_ScrollBottom_Click"/>

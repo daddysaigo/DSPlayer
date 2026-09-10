@@ -20,6 +20,11 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
+                <TextBlock Text="ウィンドウ" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <CheckBox x:Name="ChkWindowSnap" Content="画面端・他のウィンドウに吸着する"
+                          Foreground="#FFE8E8E8" Margin="0,0,0,6"/>
+                <TextBlock Text="移動中に端へ近づけると吸着します。Shiftキーで一時解除。"
+                           Foreground="#FFAAAAAA" TextWrapping="Wrap" Margin="0,0,0,18"/>
                 <TextBlock Text="コメント表示" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,12"/>
 
                 <Grid Margin="0,0,0,8">
