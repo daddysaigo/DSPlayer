@@ -1779,13 +1779,23 @@ public partial class MainWindow : Window
         if (sv.ScrollableHeight <= 0)
             return;
 
-        var atBottom = sv.ScrollableHeight - sv.VerticalOffset < 40;
-        if (atBottom)
+        // Any upward movement is an explicit request to leave live-follow, even if
+        // virtualization still reports the offset as being very close to the end.
+        if (e.VerticalChange < 0)
+        {
+            PauseLiveComments();
+            return;
+        }
+
+        // Resume only when the user actually scrolls downward to the true end.
+        // Extent changes caused by a thumbnail loading must not resume live-follow.
+        var atBottom = sv.ScrollableHeight - sv.VerticalOffset < 2;
+        if (atBottom && e.VerticalChange > 0)
         {
             if (!IsFollowingLiveComments || _unseenNewPosts > 0)
                 ResumeLiveComments();
         }
-        else if (e.VerticalChange != 0)
+        else if (e.VerticalChange > 0)
         {
             PauseLiveComments();
         }

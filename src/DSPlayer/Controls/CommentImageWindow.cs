@@ -49,8 +49,8 @@ public sealed class CommentImageWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
         Background = System.Windows.Media.Brushes.Transparent;
-        MinWidth = 120;
-        MinHeight = 120;
+        MinWidth = 32;
+        MinHeight = 32;
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
 
@@ -99,12 +99,13 @@ public sealed class CommentImageWindow : Window
         _aspect = pxW / (double)pxH;
 
         var work = SystemParameters.WorkArea;
-        var maxW = Math.Max(200, work.Width * 0.86);
-        var maxH = Math.Max(200, work.Height * 0.86);
-        var scale = Math.Min(maxW / pxW, maxH / pxH);
-        scale = Math.Clamp(scale, 0.2, 2.0);
-        Width = Math.Max(120, pxW * scale);
-        Height = Math.Max(120, Width / _aspect);
+        // Show at native size by default. Only large images are reduced so that a
+        // 1920x1080-class image does not cover most of the desktop.
+        var maxW = Math.Max(200, Math.Min(1280, work.Width * 0.80));
+        var maxH = Math.Max(200, Math.Min(800, work.Height * 0.80));
+        var scale = Math.Min(1.0, Math.Min(maxW / pxW, maxH / pxH));
+        Width = Math.Max(1, pxW * scale);
+        Height = Math.Max(1, pxH * scale);
 
         if (!IsVisible)
             Show();
