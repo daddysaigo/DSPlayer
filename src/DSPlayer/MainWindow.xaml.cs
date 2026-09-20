@@ -2570,9 +2570,9 @@ public partial class MainWindow : Window
     {
         var n = (int)Math.Round(_player?.Volume ?? 0);
         n = Math.Clamp(n, 0, 100);
-        VolumeText.Text = n.ToString();
         var muted = _player?.IsMuted == true;
-        VolumeLabel.Text = muted ? "消音" : "音量";
+        VolumeLabel.Text = "音量";
+        VolumeText.Text = muted ? "--" : n.ToString();
         VolumePanel.ToolTip = muted
             ? "クリックでミュート解除"
             : "クリックでミュート";
