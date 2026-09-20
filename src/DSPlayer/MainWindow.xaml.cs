@@ -63,6 +63,8 @@ public partial class MainWindow : Window
     private int _unseenNewPosts;
     /// <summary>True while we ourselves are snapping to the latest res (ignore ScrollChanged).</summary>
     private bool _programmaticCommentScroll;
+    /// <summary>Invalidates delayed live-follow callbacks when the user starts scrolling.</summary>
+    private int _commentScrollRequestVersion;
     /// <summary>True when this poll rebuilt the list (first load / thread replace).</summary>
     private bool _commentsRebuiltThisUpdate;
     private string? _contactUrl;
@@ -205,6 +207,7 @@ public partial class MainWindow : Window
             new EventHandler<HeaderLinkEventArgs>(CommentHeader_LinkLeave));
         // Middle-click autoscroll: click once → move to scroll → click again / LMB to exit
         CommentList.PreviewMouseDown += CommentList_AutoScroll_PreviewMouseDown;
+        CommentList.PreviewMouseWheel += CommentList_PreviewMouseWheel;
         PreviewKeyDown += CommentList_AutoScroll_PreviewKeyDown;
         ApplyCommentPanelSettings();
         ApplyCommentFont();
@@ -1725,6 +1728,8 @@ public partial class MainWindow : Window
 
     private void PauseLiveComments()
     {
+        _commentScrollRequestVersion++;
+        _programmaticCommentScroll = false;
         _stickToBottom = false;
         _userScrollingComments = true;
     }
@@ -1796,11 +1801,19 @@ public partial class MainWindow : Window
     private void ScheduleScrollCommentsToEnd()
     {
         // Virtualizing list needs layout pass(es) before ScrollIntoView works on last item
+        var requestVersion = ++_commentScrollRequestVersion;
         _programmaticCommentScroll = true;
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ScrollCommentsToEndCore));
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (requestVersion == _commentScrollRequestVersion && IsFollowingLiveComments)
+                ScrollCommentsToEndCore();
+        }));
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
         {
-            ScrollCommentsToEndCore();
+            if (requestVersion != _commentScrollRequestVersion)
+                return;
+            if (IsFollowingLiveComments)
+                ScrollCommentsToEndCore();
             _programmaticCommentScroll = false;
         }));
     }
@@ -2746,6 +2759,25 @@ public partial class MainWindow : Window
 
     // --- Comment middle-click autoscroll (browser-style: click, move, click again) ---
 
+    private void CommentList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var sv = FindDescendantScrollViewer(CommentList);
+        if (sv is null || sv.ScrollableHeight <= 0)
+            return;
+
+        // RichTextBox/image content otherwise consumes the wheel before the outer list.
+        // Pause live-follow first so a queued "scroll to latest" cannot undo this notch.
+        if (e.Delta > 0)
+            PauseLiveComments();
+
+        var notches = e.Delta / 120.0;
+        var lines = Math.Max(1, SystemParameters.WheelScrollLines);
+        var pixels = notches * lines * Math.Max(18, CommentList.FontSize * 1.35);
+        var target = Math.Clamp(sv.VerticalOffset - pixels, 0, sv.ScrollableHeight);
+        sv.ScrollToVerticalOffset(target);
+        e.Handled = true;
+    }
+
     private void CommentList_AutoScroll_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         // Exit on left/right click while in mode
@@ -2817,13 +2849,14 @@ public partial class MainWindow : Window
         catch { return; }
 
         var dy = pos.Y - _commentAutoScrollOrigin.Y;
-        const double deadZone = 8; // px — no scroll near origin
+        const double deadZone = 5; // px — no scroll near origin
         if (Math.Abs(dy) <= deadZone)
             return;
 
-        // Distance beyond dead-zone → speed (px per ~16ms tick). Cap for control.
+        // Distance beyond dead-zone → speed (px per ~16ms tick).
+        // Slightly stronger than the old curve so it feels like normal browser autoscroll.
         var dist = Math.Abs(dy) - deadZone;
-        var speed = Math.Min(48, 0.35 * dist + 0.8 * (dist * dist) / 80);
+        var speed = Math.Min(80, 0.5 * dist + 1.1 * (dist * dist) / 80);
         if (dy < 0) speed = -speed; // pointer above origin → scroll up
 
         var target = sv.VerticalOffset + speed;

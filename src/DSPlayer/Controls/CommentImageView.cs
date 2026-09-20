@@ -177,7 +177,12 @@ public sealed class CommentImageView : System.Windows.Controls.Image
         if (double.IsNaN(maxH) || maxH <= 1)
             maxH = src.PixelHeight;
         var ar = src.PixelWidth / (double)Math.Max(1, src.PixelHeight);
-        var w = Math.Min(maxW, src.PixelWidth);
+        // The popup deliberately uses StretchDirection.Both. In that mode the window
+        // may be larger than a small source image, so fill it instead of leaving a
+        // black frame around an image locked to its native pixel size.
+        var w = StretchDirection == StretchDirection.Both
+            ? maxW
+            : Math.Min(maxW, src.PixelWidth);
         var h = w / ar;
         if (h > maxH)
         {
