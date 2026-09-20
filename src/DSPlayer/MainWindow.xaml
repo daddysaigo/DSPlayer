@@ -74,51 +74,6 @@
         <Thickness x:Key="CommentItemPadding">6,8</Thickness>
         <Thickness x:Key="CommentItemMargin">0,0,0,2</Thickness>
 
-        <!-- Thin, quiet vertical scrollbar for comment list -->
-        <Style x:Key="CommentScrollBarThumb" TargetType="Thumb">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="IsTabStop" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Thumb">
-                        <Border Background="#66A0A0A0" CornerRadius="3" Margin="1"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="CommentScrollBar" TargetType="ScrollBar">
-            <Setter Property="OverridesDefaultStyle" Value="True"/>
-            <Setter Property="Width" Value="6"/>
-            <Setter Property="MinWidth" Value="6"/>
-            <Setter Property="Opacity" Value="0.55"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Grid Background="Transparent" Width="6">
-                            <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
-                                <Track.DecreaseRepeatButton>
-                                    <RepeatButton Opacity="0" IsTabStop="False" Command="ScrollBar.PageUpCommand" Height="0.1"/>
-                                </Track.DecreaseRepeatButton>
-                                <Track.Thumb>
-                                    <Thumb Style="{StaticResource CommentScrollBarThumb}"/>
-                                </Track.Thumb>
-                                <Track.IncreaseRepeatButton>
-                                    <RepeatButton Opacity="0" IsTabStop="False" Command="ScrollBar.PageDownCommand" Height="0.1"/>
-                                </Track.IncreaseRepeatButton>
-                            </Track>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="Orientation" Value="Horizontal">
-                    <Setter Property="Width" Value="Auto"/>
-                    <Setter Property="Height" Value="6"/>
-                    <Setter Property="MinHeight" Value="6"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
         <!-- ===== Flat: PCR-like rows ===== -->
         <Style x:Key="CommentItemStyleFlat" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="{DynamicResource CommentItemPadding}"/>
@@ -328,9 +283,6 @@
                                  SizeChanged="CommentList_SizeChanged"
                                  ItemContainerStyle="{StaticResource CommentItemStyleFlat}"
                                  ItemTemplate="{StaticResource CommentItemTemplateFlat}">
-                            <ListBox.Resources>
-                                <Style TargetType="ScrollBar" BasedOn="{StaticResource CommentScrollBar}"/>
-                            </ListBox.Resources>
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <VirtualizingStackPanel/>

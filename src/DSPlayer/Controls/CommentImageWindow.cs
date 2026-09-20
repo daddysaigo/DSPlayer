@@ -48,7 +48,7 @@ public sealed class CommentImageWindow : Window
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
-        Background = System.Windows.Media.Brushes.Black;
+        Background = System.Windows.Media.Brushes.Transparent;
         MinWidth = 120;
         MinHeight = 120;
         UseLayoutRounding = true;
