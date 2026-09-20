@@ -2571,6 +2571,21 @@ public partial class MainWindow : Window
         var n = (int)Math.Round(_player?.Volume ?? 0);
         n = Math.Clamp(n, 0, 100);
         VolumeText.Text = n.ToString();
+        var muted = _player?.IsMuted == true;
+        VolumeLabel.Text = muted ? "消音" : "音量";
+        VolumePanel.ToolTip = muted
+            ? "クリックでミュート解除"
+            : "クリックでミュート";
+        VolumePanel.Opacity = muted ? 0.65 : 1.0;
+    }
+
+    private void VolumePanel_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_player is null)
+            return;
+        _player.ToggleMute();
+        UpdateVolumeText();
+        e.Handled = true;
     }
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

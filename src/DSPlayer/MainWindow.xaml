@@ -481,10 +481,14 @@
                     MinHeight="28">
                 <!-- Dock=Right is outermost first: Volume, stats, momentum, then status fills left -->
                 <DockPanel LastChildFill="True">
-                    <StackPanel DockPanel.Dock="Right"
+                    <StackPanel x:Name="VolumePanel"
+                                DockPanel.Dock="Right"
                                 Orientation="Horizontal"
                                 Margin="12,0,0,0"
-                                VerticalAlignment="Center">
+                                VerticalAlignment="Center"
+                                Cursor="Hand"
+                                ToolTip="クリックでミュート切替"
+                                PreviewMouseLeftButtonDown="VolumePanel_PreviewMouseLeftButtonDown">
                         <TextBlock x:Name="VolumeLabel"
                                    Foreground="{StaticResource ForegroundBrush}"
                                    FontSize="11"
