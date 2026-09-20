@@ -14,6 +14,7 @@ public sealed class MpvPlayerHost : IDisposable
     private readonly object _sync = new();
     private bool _disposed;
     private double _volume = 0;
+    private bool _muted;
 
     public bool IsInitialized => _handle != IntPtr.Zero;
 
@@ -22,6 +23,8 @@ public sealed class MpvPlayerHost : IDisposable
         get => _volume;
         set => SetVolume(value);
     }
+
+    public bool IsMuted => _muted;
 
     public event EventHandler<string>? Log;
     public event EventHandler? FileLoaded;
@@ -157,6 +160,22 @@ public sealed class MpvPlayerHost : IDisposable
     }
 
     public void AdjustVolume(double delta) => SetVolume(_volume + delta);
+
+    public void SetMuted(bool muted)
+    {
+        _muted = muted;
+        if (_handle == IntPtr.Zero) return;
+        try
+        {
+            SetProperty("mute", muted ? "yes" : "no");
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke(this, "mute set failed: " + ex.Message);
+        }
+    }
+
+    public void ToggleMute() => SetMuted(!_muted);
 
     public void Command(params string[] args)
     {
