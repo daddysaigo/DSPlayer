@@ -159,7 +159,12 @@ public sealed class MpvPlayerHost : IDisposable
         }
     }
 
-    public void AdjustVolume(double delta) => SetVolume(_volume + delta);
+    public void AdjustVolume(double delta)
+    {
+        if (_muted)
+            SetMuted(false);
+        SetVolume(_volume + delta);
+    }
 
     public void SetMuted(bool muted)
     {
