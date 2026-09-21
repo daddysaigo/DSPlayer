@@ -1,8 +1,7 @@
 # DSPlayer
 
-PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイヤーです。動画再生、掲示板コメント表示・書き込み、コメント画像表示、ウィンドウ吸着などを1つの画面にまとめています。
+PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイヤーです。
 
-> 個人開発の非公式ソフトです。PeerCastStation、PeCaRecorder、PCRPlayerの各開発者とは関係ありません。
 
 ## 参考にしたソフト
 
@@ -14,7 +13,6 @@ DSPlayerの開発にあたり、[PCRPlayer](http://pecatv.s25.xrea.com/)の機�
 - PeerCastStation
 - PeCaRecorder
 
-GitHub Releasesの配布ZIPは.NETランタイムとlibmpvを同梱するため、通常は追加インストール不要です。
 
 ## インストール
 
@@ -30,7 +28,7 @@ GitHub Releasesの配布ZIPは.NETランタイムとlibmpvを同梱するため�
 | ブラウザで開く | オフ |
 | IDを検証 | オン推奨 |
 
-チャンネルをPeCaRecorderから開くとDSPlayerが起動します。DSPlayer.exeを直接起動してもチャンネルは再生されません。
+チャンネルをPeCaRecorderから開くとDSPlayerが起動します。
 
 ### 起動引数
 
@@ -39,7 +37,6 @@ GitHub Releasesの配布ZIPは.NETランタイムとlibmpvを同梱するため�
 - `$3`: 掲示板・Contact URL
 - `$6`: PeCaRecorderが取得した視聴者数
 
-`$6`は起動時点の値で、自動更新されません。ビットレートはDSPlayerが受信量を測定するため自動更新されます。
 
 ## 主な操作
 
@@ -70,13 +67,6 @@ PCRBrowserなどの外部BBSブラウザは同梱していません。使用す�
 
 ログには再生URL、チャンネル名、掲示板URLなどが記録されます。不具合報告へ添付する場合は内容を確認してください。
 
-## 既知の制限
-
-- Windows x64専用です。
-- 主にjpnkn掲示板・したらば・5ch系掲示板を対象とし、すべての掲示板には対応しません。
-- 視聴者数は起動時点のスナップショットです。
-- 配信形式やPeerCastStation側の状態により、再接続が必要になる場合があります。
-- コード署名していない配布物ではWindows SmartScreenの警告が表示される場合があります。
 
 ## ソースからビルド
 
