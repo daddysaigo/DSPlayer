@@ -2,7 +2,6 @@
 
 PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイヤーです。動画再生、掲示板コメント表示・書き込み、コメント画像表示、ウィンドウ吸着などを1つの画面にまとめています。
 
-> 個人開発の非公式ソフトです。PeerCastStation、PeCaRecorder、PCRPlayerの各開発者とは関係ありません。
 
 ## 必要環境
 
