@@ -4,6 +4,10 @@ PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイ�
 
 > 個人開発の非公式ソフトです。PeerCastStation、PeCaRecorder、PCRPlayerの各開発者とは関係ありません。
 
+## 参考にしたソフト
+
+DSPlayerの開発にあたり、[PCRPlayer](http://pecatv.s25.xrea.com/)の機能や使い勝手を参考にしました。PCRPlayerの作者・関係者の皆さまに感謝します。DSPlayerは独立した非公式ソフトです。
+
 ## 必要環境
 
 - Windows 10/11 x64
