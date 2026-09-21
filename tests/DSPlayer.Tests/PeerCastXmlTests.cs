@@ -5,6 +5,22 @@ namespace DSPlayer.Tests;
 
 public class PeerCastXmlTests
 {
+    [Fact]
+    public void ParseChannel_DoesNotTreatLocalRelayListenerAsAudience()
+    {
+        const string xml = """
+            <peercast><channels_relayed><channel id="ABC">
+              <hits hosts="0" listeners="0" relays="0" />
+              <relay listeners="1" relays="0" status="RECEIVE" />
+            </channel></channels_relayed></peercast>
+            """;
+
+        var info = PeerCastXmlClient.ParseChannel(xml, "ABC");
+
+        Assert.NotNull(info);
+        Assert.Equal(0, info.Listeners);
+    }
+
     private const string SampleXml = """
         <?xml version="1.0" encoding="utf-8"?>
         <peercast session="ABC">

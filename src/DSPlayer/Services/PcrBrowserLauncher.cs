@@ -9,16 +9,11 @@ namespace DSPlayer.Services;
 /// </summary>
 public static class PcrBrowserLauncher
 {
-    public static readonly string DefaultPath =
-        @"C:\Program Files (x86)\Peercast\PeCaRecorder_v091.7_20210914\PeCaRecorder_v091\PCRPlayer\PCRBrowser.exe";
-
     public static string? FindExecutable(string? configuredPath = null)
     {
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(configuredPath))
             candidates.Add(configuredPath);
-
-        candidates.Add(DefaultPath);
 
         // Same folder as our exe (if user copies PCRBrowser next to DSPlayer)
         candidates.Add(Path.Combine(AppContext.BaseDirectory, "PCRBrowser.exe"));
@@ -34,6 +29,24 @@ public static class PcrBrowserLauncher
                 return c;
         }
 
+        // PeCaRecorder is commonly installed under Program Files (x86)\Peercast,
+        // but versioned folder names vary. Search only this small conventional root.
+        try
+        {
+            var peercastRoot = Path.Combine(pf86, "Peercast");
+            if (Directory.Exists(peercastRoot))
+            {
+                var found = Directory.EnumerateFiles(peercastRoot, "PCRBrowser.exe", SearchOption.AllDirectories)
+                    .FirstOrDefault();
+                if (found is not null)
+                    return found;
+            }
+        }
+        catch
+        {
+            // A denied or malformed installation tree simply means not found.
+        }
+
         return null;
     }
 
@@ -44,7 +57,7 @@ public static class PcrBrowserLauncher
 
         var exe = FindExecutable(configuredPath)
             ?? throw new FileNotFoundException(
-                "PCRBrowser.exe が見つかりません。PCRPlayer 同梱のパスを確認してください。\n" + DefaultPath);
+                "PCRBrowser.exe が見つかりません。設定からBBSブラウザの実行ファイルを指定してください。");
 
         var psi = new ProcessStartInfo
         {

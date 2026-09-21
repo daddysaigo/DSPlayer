@@ -15,8 +15,8 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 | 項目 | 値 |
 |------|-----|
 | 有効 | チェック |
-| パス | `D:\...\DSPlayer\src\DSPlayer\bin\Release\net8.0-windows\DSPlayer.exe`（ビルド成果物） |
-| 引数 | `"$x" "$0" "$3"` |
+| パス | 展開した配布ZIP内の`DSPlayer.exe` |
+| 引数 | `"$x" "$0" "$3" "$6"` |
 | タイプ | `FLV\|WMV` または `FLV\|UNKNOWN` |
 | ブラウザで開く | オフ |
 | 接続してから起動 | オフ（任意） |
@@ -29,6 +29,7 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 | `$x` | ストリーム / プレイリスト URL | `http://127.0.0.1:7144/pls/<ID>?tip=host:port` |
 | `$0` | チャンネル名 | `木寺 (FLV)` |
 | `$3` | Contact URL（掲示板） | `https://.../read.cgi/...` |
+| `$6` | YPが通知したリスナー数 | `75` |
 
 **必ず `$3` を含めてください。**  
 これが無いとコメント欄の Contact 解決が PeerCast API 頼みになり、板が開かないことがあります。
@@ -38,7 +39,7 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 ```xml
 <item enable="true"
       path="PCRPlayer\PCRPlayer.exe"
-      arg="&quot;$x&quot; &quot;$0&quot; &quot;$3&quot;"
+      arg="&quot;$x&quot; &quot;$0&quot; &quot;$3&quot; &quot;$6&quot;"
       type="WMV|FLV"
       browser="false" connect="false" verify="true"/>
 ```
@@ -61,7 +62,7 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 2. Release ビルド:
 
    ```powershell
-   cd "D:\Vive cording\DSPlayer"
+   cd DSPlayer
    .\scripts\fetch-libmpv.ps1   # 未取得時
    dotnet build .\src\DSPlayer\DSPlayer.csproj -c Release
    ```
@@ -76,7 +77,7 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 4. 配布物を PCRPlayer フォルダへコピー（**上書き前にバックアップ必須**）
 5. PeCaRecorder のプレイヤー設定パスが  
    `PCRPlayer\PCRPlayer.exe` のままなら **引数だけ**  
-   `"$x" "$0" "$3"` になっているか確認
+   `"$x" "$0" "$3" "$6"` になっているか確認
 6. チャンネルを再生して、映像・コメント・書き込みを確認
 
 ### 注意
@@ -102,11 +103,12 @@ PeCaRecorder → **オプション → 全般の設定 → プレイヤー**
 dotnet run --project .\src\DSPlayer\DSPlayer.csproj -c Release -- `
   "http://127.0.0.1:7144/stream/<ChannelID>" "テストch"
 
-# 本番相当（$x $0 $3）
+# 本番相当（$x $0 $3 $6）
 dotnet run --project .\src\DSPlayer\DSPlayer.csproj -c Release -- `
   "http://127.0.0.1:7144/pls/<ChannelID>?tip=host:port" `
   "チャンネル名" `
-  "https://bbs.example/test/read.cgi/board/1234567890/"
+  "https://bbs.example/test/read.cgi/board/1234567890/" `
+  "75"
 ```
 
 ## 4. 受け入れチェックリスト

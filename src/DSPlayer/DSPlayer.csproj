@@ -13,7 +13,10 @@
     <RootNamespace>DSPlayer</RootNamespace>
     <Product>DSPlayer</Product>
     <Description>Modern PCRPlayer replacement for PeCaRecorder / PeerCast</Description>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
+    <Authors>daddysaigo</Authors>
+    <Copyright>Copyright (c) 2026 daddysaigo</Copyright>
+    <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Prefer DPI-aware WPF -->

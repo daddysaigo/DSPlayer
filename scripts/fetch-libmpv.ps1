@@ -104,7 +104,16 @@ function Try-ZhongflyGitHub {
 
     $extract = Join-Path $TempDir "out"
     Expand-ArchiveSmart -Archive $archive -Dest $extract
-    return (Install-DllFromRoot -Root $extract)
+    $installed = Install-DllFromRoot -Root $extract
+    if ($installed) {
+        @(
+            "Asset: $($asset.name)"
+            "Binary: $($asset.browser_download_url)"
+            "Build scripts: https://github.com/zhongfly/mpv-winbuild"
+            "mpv source and licenses: https://github.com/mpv-player/mpv"
+        ) | Set-Content -Encoding UTF8 (Join-Path $OutDir "MPV_BUILD.txt")
+    }
+    return $installed
 }
 
 try {

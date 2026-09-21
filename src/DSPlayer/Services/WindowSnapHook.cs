@@ -20,10 +20,11 @@ internal sealed class WindowSnapHook : IDisposable
     private const uint GA_ROOTOWNER = 3;
     private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     private const int DWMWA_CLOAKED = 14;
-    private const int SnapDistanceDip = 12;
 
     private readonly Window _window;
     private readonly Func<bool> _isEnabled;
+    public Func<bool> SnapToWindows { get; set; } = () => true;
+    public Func<int> DistanceDip { get; set; } = () => 12;
     private HwndSource? _source;
     private Rectangle[] _workAreas = [];
     private Rectangle[] _otherWindows = [];
@@ -72,7 +73,7 @@ internal sealed class WindowSnapHook : IDisposable
                 _dragStart = start.ToRectangle();
                 _dragCursor = new Point(cursor.X, cursor.Y);
                 _workAreas = System.Windows.Forms.Screen.AllScreens.Select(s => s.WorkingArea).ToArray();
-                _otherWindows = CollectWindows(hwnd);
+                _otherWindows = SnapToWindows() ? CollectWindows(hwnd) : [];
                 _dragging = true;
             }
         }
@@ -91,7 +92,7 @@ internal sealed class WindowSnapHook : IDisposable
                         free.Top + frame.Top - current.Top, free.Right + frame.Right - current.Right,
                         free.Bottom + frame.Bottom - current.Bottom);
 
-                var distance = Math.Max(1, (int)Math.Round(SnapDistanceDip * GetDpiForWindow(hwnd) / 96.0));
+                var distance = Math.Max(1, (int)Math.Round(Math.Clamp(DistanceDip(), 8, 18) * GetDpiForWindow(hwnd) / 96.0));
                 var snapped = WindowSnapGeometry.Snap(visible, _workAreas, _otherWindows, distance);
                 result.Offset(snapped.Left - visible.Left, snapped.Top - visible.Top);
             }
