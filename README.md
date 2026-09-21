@@ -5,7 +5,9 @@ PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイ�
 
 ## 参考にしたソフト
 
-DSPlayerの開発にあたり、[PCRPlayer](http://pecatv.s25.xrea.com/)の機能や使い勝手を参考にしました。PCRPlayerの作者・関係者の皆さまに感謝します。DSPlayerは独立した非公式ソフトです。
+DSPlayerの開発にあたり、[PCRPlayer](http://pecatv.s25.xrea.com/)の機能や使い勝手を参考にしました。掲示板本文の整形とURL書換えも、PCRPlayer.xmlの設定ルールを参考にDSPlayer用に実装しています。PCRPlayerのソースコードやPCRPlayer.xml自体は本リポジトリ・配布物に同梱していません。
+
+PCRPlayerの作者・関係者の皆さまに感謝します。DSPlayerはPCRPlayerの公式後継版ではありません。
 
 ## 必要環境
 
