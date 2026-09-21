@@ -252,6 +252,7 @@ public class BbsTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task LiveFetch_ShitarabaThread_IfReachable()
     {
         var url = "https://jbbs.shitaraba.net/bbs/read.cgi/radio/31139/1786177527/";
@@ -278,6 +279,7 @@ public class BbsTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task LiveFetch_ShitarabaBoardOnly_IfReachable()
     {
         var url = "https://jbbs.shitaraba.net/netgame/16823/";
@@ -298,6 +300,7 @@ public class BbsTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task LiveFetch_JpnknBoardOnly_IfReachable()
     {
         var url = "https://bbs.jpnkn.com/ubereats/";
@@ -323,6 +326,7 @@ public class BbsTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task LiveFetch_KomokomoDat_IfReachable()
     {
         var url = "https://komokomo.ddns.net/test/read.cgi/kidera/1786069077/";
