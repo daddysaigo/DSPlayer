@@ -1,6 +1,6 @@
 # DSPlayer
 
-PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイヤーです。動画再生、掲示板レス表示・書き込み、レス画像表示、勢い表示、ウィンドウ吸着などを1つの画面にまとめています。
+PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイヤーです。
 
 
 ## 必要環境
