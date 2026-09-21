@@ -12,8 +12,8 @@ jobs:
   package:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - name: Install 7-Zip command
@@ -21,7 +21,7 @@ jobs:
       - name: Build release ZIP
         shell: pwsh
         run: ./scripts/publish-release.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: DSPlayer-win-x64
           path: artifacts/*.zip
