@@ -3,29 +3,82 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="設定 - DSPlayer"
         Icon="pack://application:,,,/Assets/dsplayer.ico"
-        Width="460"
-        Height="640"
-        MinWidth="400"
+        Width="540"
+        Height="700"
+        MinWidth="480"
         MinHeight="480"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="True"
         Background="#FF1E1E1E"
-        FontSize="13">
-    <DockPanel Margin="16">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="キャンセル" Width="96" Height="32" Margin="0,0,8,0" IsCancel="True" Click="Cancel_Click"/>
-            <Button Content="OK" Width="96" Height="32" IsDefault="True" Click="Ok_Click"/>
+        FontSize="13"
+        FontFamily="Meiryo UI">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="Padding" Value="14,4"/>
+            <Setter Property="Background" Value="#FF343434"/>
+            <Setter Property="Foreground" Value="#FFF2F2F2"/>
+            <Setter Property="BorderBrush" Value="#FF5A5A5A"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FF292929"/>
+            <Setter Property="Foreground" Value="#FFF2F2F2"/>
+            <Setter Property="CaretBrush" Value="White"/>
+            <Setter Property="BorderBrush" Value="#FF575757"/>
+            <Setter Property="Padding" Value="7,3"/>
+        </Style>
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FF6EC6FF"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,8,0,10"/>
+        </Style>
+    </Window.Resources>
+    <DockPanel Margin="20,16,20,18">
+        <Border DockPanel.Dock="Top" BorderBrush="#FF414141" BorderThickness="0,0,0,1" Padding="0,0,0,12" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="DSPlayer 設定" Foreground="White" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock Text="表示・操作・掲示板連携をまとめて調整できます" Foreground="#FF999999" Margin="0,4,0,0"/>
+            </StackPanel>
+        </Border>
+        <Border DockPanel.Dock="Bottom" BorderBrush="#FF414141" BorderThickness="0,1,0,0" Padding="0,14,0,0" Margin="0,12,0,0">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="キャンセル" Width="104" Margin="0,0,8,0" IsCancel="True" Click="Cancel_Click"/>
+            <Button Content="保存" Width="104" IsDefault="True" Click="Ok_Click" Background="#FF1779BA" BorderBrush="#FF3095D4"/>
         </StackPanel>
+        </Border>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
-                <TextBlock Text="ウィンドウ" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <CheckBox x:Name="ChkWindowSnap" Content="画面端・他のウィンドウに吸着する"
+                <TextBlock Text="ウィンドウ" Style="{StaticResource SectionTitle}" Margin="0,0,0,10"/>
+                <CheckBox x:Name="ChkWindowSnap" Content="ウィンドウの吸着を有効にする"
                           Foreground="#FFE8E8E8" Margin="0,0,0,6"/>
+                <Grid Margin="0,2,0,8" IsEnabled="{Binding IsChecked, ElementName=ChkWindowSnap}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="吸着先" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="SnapTargetBox" Grid.Column="1" Height="28" Width="260" HorizontalAlignment="Left" Margin="0,0,0,6">
+                        <ComboBoxItem Content="画面端だけ"/>
+                        <ComboBoxItem Content="画面端と他のウィンドウ"/>
+                    </ComboBox>
+                    <TextBlock Text="吸着の強さ" Grid.Row="1" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="SnapStrengthBox" Grid.Row="1" Grid.Column="1" Height="28" Width="260" HorizontalAlignment="Left">
+                        <ComboBoxItem Content="弱め"/>
+                        <ComboBoxItem Content="標準"/>
+                        <ComboBoxItem Content="強め"/>
+                    </ComboBox>
+                </Grid>
                 <TextBlock Text="移動中に端へ近づけると吸着します。Shiftキーで一時解除。"
                            Foreground="#FFAAAAAA" TextWrapping="Wrap" Margin="0,0,0,18"/>
-                <TextBlock Text="コメント表示" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                <Separator Background="#FF414141" Margin="0,0,0,8"/>
+                <TextBlock Text="コメント表示" Style="{StaticResource SectionTitle}"/>
 
                 <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
@@ -33,7 +86,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="UI テーマ" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="UiThemeBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
+                    <ComboBox x:Name="UiThemeBox" Grid.Column="1" Height="28" Width="260" HorizontalAlignment="Left"
                               Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
                               ToolTip="書込欄・ステータス・クロームの色。コメント欄とは独立して選べます"/>
                 </Grid>
@@ -43,7 +96,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="コメント見た目" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="CommentThemeBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
+                    <ComboBox x:Name="CommentThemeBox" Grid.Column="1" Height="28" Width="260" HorizontalAlignment="Left"
                               Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
                               ToolTip="平面 / カード / 暗色など。UI テーマとは独立して選べます"/>
                 </Grid>
@@ -53,19 +106,19 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="勢いの見た目" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="MomentumStyleBox" Grid.Column="1" Height="28" MaxWidth="260" HorizontalAlignment="Left"
+                    <ComboBox x:Name="MomentumStyleBox" Grid.Column="1" Height="28" Width="260" HorizontalAlignment="Left"
                               Background="#FFFFFFFF" Foreground="#FF000000" BorderBrush="#FF888888"
                               ToolTip="ヒート＝勢い ▰▰▰▱▱。シンプル＝以前の「勢い 58　普通」"/>
                 </Grid>
 
                 <!-- A: レス情報 -->
-                <TextBlock Text="A レス情報（番号・名前・日時）" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="レス情報（番号・名前・日時）" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                     <CheckBox x:Name="ChkShowNumber" Content="レス番号" Foreground="#FFE8E8E8" Margin="0,0,16,0"/>
                     <CheckBox x:Name="ChkShowName" Content="名前" Foreground="#FFE8E8E8" Margin="0,0,16,0"/>
                     <CheckBox x:Name="ChkShowDate" Content="日時" Foreground="#FFE8E8E8"/>
                 </StackPanel>
-                <Grid Margin="0,0,0,6">
+                <Grid Margin="0,0,0,6" Width="390" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="*"/>
@@ -82,7 +135,7 @@
                              CaretBrush="#FF000000" VerticalContentAlignment="Center"
                              ToolTip="8〜36"/>
                 </Grid>
-                <Grid Margin="0,0,0,8">
+                <Grid Margin="0,0,0,8" Width="390" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="*"/>
@@ -100,11 +153,11 @@
                 <TextBlock x:Name="HeaderPreview"
                            Text="123 ：名前：2026/01/01 12:00:00"
                            Foreground="#FF888888" Background="#FFF0F0F0" Padding="6,4" Margin="0,0,0,16"
-                           TextWrapping="Wrap"/>
+                           TextWrapping="Wrap" Width="390" HorizontalAlignment="Left"/>
 
                 <!-- B: 本文 -->
-                <TextBlock Text="B 本文" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                <Grid Margin="0,0,0,6">
+                <TextBlock Text="本文" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,6" Width="390" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="*"/>
@@ -121,7 +174,7 @@
                              CaretBrush="#FF000000" VerticalContentAlignment="Center"
                              ToolTip="8〜36"/>
                 </Grid>
-                <Grid Margin="0,0,0,8">
+                <Grid Margin="0,0,0,8" Width="390" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="*"/>
@@ -140,9 +193,21 @@
                            Text="本文あいうえお ABC 123"
                            Foreground="#FF111111"
                            Background="#FFF0F0F0" Padding="6,4" Margin="0,0,0,16"
-                           TextWrapping="Wrap"/>
+                           TextWrapping="Wrap" Width="390" HorizontalAlignment="Left"/>
 
-                <TextBlock Text="掲示板" Foreground="#FFCCCCCC" FontWeight="SemiBold" Margin="0,4,0,10"/>
+                <Separator Background="#FF414141" Margin="0,0,0,8"/>
+                <TextBlock Text="掲示板・外部ブラウザ" Style="{StaticResource SectionTitle}"/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="BBSブラウザ" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <TextBox x:Name="PcrBrowserPathBox" Grid.Column="1" Height="32" VerticalContentAlignment="Center"
+                             ToolTip="右クリックメニューの「BBSブラウザを開く」で使用する実行ファイル"/>
+                    <Button Grid.Column="2" Content="参照..." Margin="8,0,0,0" Click="BrowsePcrBrowser_Click"/>
+                </Grid>
                 <Grid Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="110"/>

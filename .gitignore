@@ -44,6 +44,9 @@ TestResults/
 publish/
 *.log
 
+# Local Codex instructions (contains machine-specific workflow/path notes)
+AGENTS.md
+
 ## Local scratch / analysis dumps
 tmp-bbs-test/
 tmp/

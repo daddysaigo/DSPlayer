@@ -12,6 +12,7 @@ namespace DSPlayer.Models;
 /// <item><term>$x</term><description>Stream or playlist URL (/stream/ or /pls/, often with ?tip=)</description></item>
 /// <item><term>$0</term><description>Channel name</description></item>
 /// <item><term>$3</term><description>Contact URL (BBS / thread / board)</description></item>
+/// <item><term>$6</term><description>Listener count reported by PeCaRecorder / YP</description></item>
 /// </list>
 /// Real example:
 /// <code>
@@ -35,6 +36,8 @@ public sealed class LaunchArgs
     public string? ChannelId { get; init; }
     /// <summary>Contact / BBS URL from PeCaRecorder <c>$3</c> (or detected).</summary>
     public string? ContactUrl { get; init; }
+    /// <summary>Listener count supplied by PeCaRecorder <c>$6</c>.</summary>
+    public int? ListenerCount { get; init; }
     public IReadOnlyList<string> RawArgs { get; init; } = Array.Empty<string>();
 
     /// <summary>True when a playable stream/playlist URL was resolved.</summary>
@@ -76,6 +79,7 @@ public sealed class LaunchArgs
         var mediaUrl = cleaned[0];
         string? channelName = null;
         string? contactUrl = null;
+        int? listenerCount = null;
 
         if (cleaned.Length >= 2)
         {
@@ -122,7 +126,9 @@ public sealed class LaunchArgs
                 LooksLikeHttpUrl(a) && !IsPeerCastMediaUrl(a));
         }
 
-        result = Build(mediaUrl, channelName, contactUrl, cleaned);
+        listenerCount = ParseListenerCount(cleaned);
+
+        result = Build(mediaUrl, channelName, contactUrl, cleaned, listenerCount);
         return true;
     }
 
@@ -169,11 +175,28 @@ public sealed class LaunchArgs
                 LooksLikeHttpUrl(a) && !IsPeerCastMediaUrl(a));
         }
 
-        return Build(mediaUrl, channelName, contactUrl, cleaned);
+        return Build(mediaUrl, channelName, contactUrl, cleaned, ParseListenerCount(cleaned));
+    }
+
+    private static int? ParseListenerCount(IEnumerable<string> args)
+    {
+        const string prefix = "--listeners=";
+        var values = args.ToArray();
+        foreach (var arg in values)
+        {
+            if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (int.TryParse(arg[prefix.Length..], out var value) && value >= 0)
+                return value;
+        }
+        if (values.Length >= 4 && int.TryParse(values[3], out var positional) && positional >= 0)
+            return positional;
+        return null;
     }
 
     private static LaunchArgs Build(
-        string? mediaUrl, string? channelName, string? contactUrl, string[] cleaned)
+        string? mediaUrl, string? channelName, string? contactUrl, string[] cleaned,
+        int? listenerCount = null)
     {
         return new LaunchArgs
         {
@@ -182,6 +205,7 @@ public sealed class LaunchArgs
             ChannelName = channelName,
             ChannelId = ExtractChannelId(mediaUrl),
             ContactUrl = contactUrl,
+            ListenerCount = listenerCount,
             RawArgs = cleaned,
         };
     }

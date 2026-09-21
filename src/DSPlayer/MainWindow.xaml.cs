@@ -949,7 +949,8 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(desc)) parts.Add(desc!);
         var comment = FirstNonEmpty(ch?.Comment);
         if (!string.IsNullOrWhiteSpace(comment)) parts.Add(comment!);
-        if (ch is not null && ch.Listeners >= 0) parts.Add(ch.Listeners + " listeners");
+        var listeners = _launchArgs.ListenerCount;
+        if (listeners is >= 0) parts.Add($"[視聴者数:{listeners}人]");
 
         // Received bitrate (packet flow), not channel.xml BitrateKbps
         if (_launchArgs.HasStream && _player is not null)

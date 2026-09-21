@@ -1,6 +1,9 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using DSPlayer.Services;
 using DSPlayer.Services.Bbs;
 using ThemeUi = DSPlayer.Themes.UiTheme;
 using ThemeComments = DSPlayer.Themes.CommentListTheme;
@@ -9,6 +12,8 @@ namespace DSPlayer.Models;
 
 public sealed class AppSettings
 {
+    private JsonObject? _savedDocument;
+    private string? _storagePath;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -66,6 +71,8 @@ public sealed class AppSettings
     public double? CommentFontSize { get; set; }
 
     public bool WindowSnapEnabled { get; set; } = true;
+    public bool WindowSnapToWindows { get; set; } = true;
+    public int WindowSnapDistance { get; set; } = 12;
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public double? WindowWidth { get; set; }
@@ -112,23 +119,25 @@ public sealed class AppSettings
         return string.Join("  ", parts);
     }
 
-    public static AppSettings Load()
+    public static AppSettings Load() => Load(SettingsPath);
+
+    internal static AppSettings Load(string path)
     {
         try
         {
-            MigrateLegacyAppDataIfNeeded();
-            var path = SettingsPath;
-            if (!File.Exists(path))
-                return new AppSettings();
-            var json = File.ReadAllText(path);
-            var s = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            if (path == SettingsPath) MigrateLegacyAppDataIfNeeded();
+            var s = AtomicJsonFile.Read(path).Deserialize<AppSettings>(JsonOptions) ?? new AppSettings();
             s.MigrateLegacyFont();
             s.Sanitize();
+            s._storagePath = path;
+            s._savedDocument = s.CommonDocument();
             return s;
         }
         catch
         {
-            return new AppSettings();
+            var fallback = new AppSettings { _storagePath = path };
+            fallback._savedDocument = fallback.CommonDocument();
+            return fallback;
         }
     }
 
@@ -156,18 +165,43 @@ public sealed class AppSettings
 
     public void Save()
     {
-        try
+        Sanitize();
+        var current = CommonDocument();
+        var baseline = _savedDocument ?? new AppSettings().CommonDocument();
+        AtomicJsonFile.Update(_storagePath ?? SettingsPath, latest => ApplyChanges(latest, baseline, current));
+        _savedDocument = current;
+    }
+
+    /// <summary>Refresh untouched fields before opening settings; retain any local unsaved edits.</summary>
+    public void RefreshFromDisk()
+    {
+        var latest = Load(_storagePath ?? SettingsPath);
+        var merged = latest.CommonDocument();
+        ApplyChanges(merged, _savedDocument ?? new AppSettings().CommonDocument(), CommonDocument());
+        var settings = merged.Deserialize<AppSettings>(JsonOptions);
+        if (settings is not null)
         {
-            Sanitize();
-            var path = SettingsPath;
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-            File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
+            CopyOver(settings, this);
+            _savedDocument = latest.CommonDocument();
         }
-        catch
+    }
+
+    private JsonObject CommonDocument()
+    {
+        var document = JsonSerializer.SerializeToNode(this, JsonOptions)!.AsObject();
+        // Legacy placement fields remain readable for migration, but new placement saves
+        // go to window-placements.json and never overwrite shared appearance preferences.
+        foreach (var key in new[] { "windowLeft", "windowTop", "windowWidth", "windowHeight" })
+            document.Remove(key);
+        return document;
+    }
+
+    private static void ApplyChanges(JsonObject latest, JsonObject baseline, JsonObject current)
+    {
+        foreach (var field in current)
         {
-            // ignore
+            if (!JsonNode.DeepEquals(field.Value, baseline[field.Key]))
+                latest[field.Key] = field.Value?.DeepClone();
         }
     }
 
@@ -230,6 +264,8 @@ public sealed class AppSettings
         to.CommentFontFamily = from.CommentFontFamily;
         to.CommentFontSize = from.CommentFontSize;
         to.WindowSnapEnabled = from.WindowSnapEnabled;
+        to.WindowSnapToWindows = from.WindowSnapToWindows;
+        to.WindowSnapDistance = from.WindowSnapDistance;
         to.WindowLeft = from.WindowLeft;
         to.WindowTop = from.WindowTop;
         to.WindowWidth = from.WindowWidth;
@@ -279,11 +315,15 @@ public sealed class AppSettings
         UiTheme = ThemeUi.NormalizeId(UiTheme);
         CommentListTheme = ThemeComments.NormalizeId(CommentListTheme);
         MomentumStyle = ThreadMomentum.NormalizeStyle(MomentumStyle);
+        WindowSnapDistance = WindowSnapDistance switch { <= 8 => 8, >= 18 => 18, _ => 12 };
     }
 
+    [JsonIgnore]
     public bool HasWindowPlacement =>
-        WindowLeft is not null && WindowTop is not null &&
-        WindowWidth is > 200 && WindowHeight is > 150;
+        WindowLeft is double left && double.IsFinite(left) &&
+        WindowTop is double top && double.IsFinite(top) &&
+        WindowWidth is double width && double.IsFinite(width) && width > 200 &&
+        WindowHeight is double height && double.IsFinite(height) && height > 150;
 
     private static string NormalizeFontWeight(string? value, string fallback)
     {

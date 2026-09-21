@@ -6,6 +6,30 @@ namespace DSPlayer.Tests;
 public class LaunchArgsTests
 {
     [Fact]
+    public void Parse_PeCaRecorder_ListenerCount()
+    {
+        var parsed = LaunchArgs.Parse(new[]
+        {
+            "http://127.0.0.1:7144/pls/B7A89A7DF32FD5230A8E7BBE1E66829C",
+            "channel", "https://example.com/bbs", "--listeners=75"
+        });
+
+        Assert.Equal(75, parsed.ListenerCount);
+    }
+
+    [Fact]
+    public void Parse_PeCaRecorder_BareListenerCount()
+    {
+        var parsed = LaunchArgs.Parse(new[]
+        {
+            "http://127.0.0.1:7144/pls/B7A89A7DF32FD5230A8E7BBE1E66829C",
+            "channel", "https://example.com/bbs", "75"
+        });
+
+        Assert.Equal(75, parsed.ListenerCount);
+    }
+
+    [Fact]
     public void Parse_StreamUrlAndChannelName()
     {
         var id = "0123456789abcdef0123456789abcdef";
