@@ -27,7 +27,7 @@ jobs:
           path: artifacts/*.zip
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*.zip
-          generate_release_notes: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME artifacts/*.zip --generate-notes --title "DSPlayer $env:GITHUB_REF_NAME"
