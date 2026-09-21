@@ -33,7 +33,6 @@ PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイ�
 - `$3`: 掲示板・Contact URL
 - `$6`: PeCaRecorderが取得した視聴者数
 
-`$6`は起動時点の値で、自動更新されません。ビットレートはDSPlayerが受信量を測定するため自動更新されます。
 
 ## 主な操作
 
