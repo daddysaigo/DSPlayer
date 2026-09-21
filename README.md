@@ -9,7 +9,6 @@ PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイ�
 - PeerCastStation
 - PeCaRecorder
 
-GitHub Releasesの配布ZIPは.NETランタイムとlibmpvを同梱するため、通常は追加インストール不要です。
 
 ## インストール
 
