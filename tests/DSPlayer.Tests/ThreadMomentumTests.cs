@@ -74,8 +74,8 @@ public class ThreadMomentumTests
     [InlineData(74, "平常運転")]
     [InlineData(75, "にぎやか")]
     [InlineData(87, "にぎやか")]
-    [InlineData(88, "大盛況")]
-    [InlineData(100, "大盛況")]
+    [InlineData(88, "超過密")]
+    [InlineData(100, "超過密")]
     public void HeatLabelFromScore_MatchesBands(int score, string expected)
     {
         Assert.Equal(expected, ThreadMomentum.HeatLabelFromScore(score));

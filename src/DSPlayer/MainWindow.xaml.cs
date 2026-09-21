@@ -362,7 +362,7 @@ public partial class MainWindow : Window
 
     private void ApplySavedWindowPlacement()
     {
-        if (!_settings.HasWindowPlacement)
+        if (!_settings.SaveWindowPlacement || !_settings.HasWindowPlacement)
             return;
 
         try
@@ -381,6 +381,7 @@ public partial class MainWindow : Window
 
     private void SaveWindowPlacement()
     {
+        if (!_settings.SaveWindowPlacement) return;
         if (_isFullscreen) return;
         if (WindowState != WindowState.Normal) return;
         if (Width < 200 || Height < 150) return;
@@ -1032,7 +1033,7 @@ public partial class MainWindow : Window
         var bbsClient = new BbsClient(
             userAgent: _settings.BbsUserAgent,
             normalizeMessages: _settings.MessageNormalize);
-        var intervalSec = Math.Clamp(_settings.BbsIntervalSeconds, 3, 120);
+        var intervalSec = Math.Clamp(_settings.BbsIntervalSeconds, 5, 120);
         _bbsPoller = new BbsPoller(bbsClient, TimeSpan.FromSeconds(intervalSec));
         _bbsPoller.Updated += BbsPoller_Updated;
         _bbsPoller.Error += BbsPoller_Error;
@@ -2263,6 +2264,8 @@ public partial class MainWindow : Window
         _player.EndFile += OnPlayerEndFile;
 
         _player.Initialize(hwnd);
+        if (_settings.SaveVolume)
+            _player.SetVolume(_settings.SavedVolume);
         _playerReady = true;
         // Owned overlay (not child of wid panel — mpv D3D covers GDI siblings)
         EnsureVideoChromeOverlay();
@@ -2285,7 +2288,7 @@ public partial class MainWindow : Window
             _playStartedUtc = DateTime.UtcNow;
             _lastPlaybackProgressUtc = DateTime.UtcNow;
             _lastProgressTimePos = null;
-            _initialAspectApplied = false;
+            _initialAspectApplied = _settings.SaveWindowPlacement && _settings.HasWindowPlacement;
             UpdateVideoAspectFromMpv();
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
@@ -3615,6 +3618,8 @@ public partial class MainWindow : Window
         _settings.CommentPanelVisible = _commentVisible;
         try
         {
+            if (_settings.SaveVolume && _player is not null)
+                _settings.SavedVolume = _player.Volume;
             SaveWindowPlacement();
             _settings.Save();
         }

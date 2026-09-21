@@ -34,7 +34,7 @@ public sealed class UiTheme
     public required MediaColor MomentumBar { get; init; }
     /// <summary>Quiet end of the heat meter (過疎).</summary>
     public required MediaColor MomentumCool { get; init; }
-    /// <summary>Hot end of the heat meter (大盛況).</summary>
+    /// <summary>Hot end of the heat meter (超過密).</summary>
     public required MediaColor MomentumHot { get; init; }
     /// <summary>Bar thickness in px (keep 2–4).</summary>
     public double MomentumBarHeight { get; init; } = 3;

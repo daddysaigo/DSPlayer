@@ -112,6 +112,8 @@ public partial class SettingsWindow : Window
             ChkMessageNormalize.IsChecked = settings.MessageNormalize;
             ChkEmbedImages.IsChecked = settings.EmbedCommentImages;
             ChkWindowSnap.IsChecked = settings.WindowSnapEnabled;
+            ChkSaveWindowPlacement.IsChecked = settings.SaveWindowPlacement;
+            ChkSaveVolume.IsChecked = settings.SaveVolume;
             SnapTargetBox.SelectedIndex = settings.WindowSnapToWindows ? 1 : 0;
             SnapStrengthBox.SelectedIndex = settings.WindowSnapDistance switch { 8 => 0, 18 => 2, _ => 1 };
         }
@@ -148,6 +150,10 @@ public partial class SettingsWindow : Window
         ChkEmbedImages.Unchecked += (_, _) => OnAnyChanged();
         ChkWindowSnap.Checked += (_, _) => OnAnyChanged();
         ChkWindowSnap.Unchecked += (_, _) => OnAnyChanged();
+        ChkSaveWindowPlacement.Checked += (_, _) => OnAnyChanged();
+        ChkSaveWindowPlacement.Unchecked += (_, _) => OnAnyChanged();
+        ChkSaveVolume.Checked += (_, _) => OnAnyChanged();
+        ChkSaveVolume.Unchecked += (_, _) => OnAnyChanged();
 
         UpdatePreview();
     }
@@ -269,6 +275,8 @@ public partial class SettingsWindow : Window
         Settings.MessageNormalize = ChkMessageNormalize.IsChecked == true;
         Settings.EmbedCommentImages = ChkEmbedImages.IsChecked == true;
         Settings.WindowSnapEnabled = ChkWindowSnap.IsChecked == true;
+        Settings.SaveWindowPlacement = ChkSaveWindowPlacement.IsChecked == true;
+        Settings.SaveVolume = ChkSaveVolume.IsChecked == true;
         Settings.WindowSnapToWindows = SnapTargetBox.SelectedIndex == 1;
         Settings.WindowSnapDistance = SnapStrengthBox.SelectedIndex switch { 0 => 8, 2 => 18, _ => 12 };
     }

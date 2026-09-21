@@ -165,7 +165,7 @@ public sealed class ThreadMomentum
 
     /// <summary>
     /// One color for the whole filled meter, by band:
-    /// 過疎 スチール青 / ゆったり 青 / 平常運転 緑 / にぎやか 黄 / 大盛況 コーラル橙.
+    /// 過疎 スチール青 / ゆったり 青 / 平常運転 緑 / にぎやか 黄 / 超過密 コーラル橙.
     /// </summary>
     public static readonly (byte R, byte G, byte B)[] MeterBandRgb =
     {
@@ -190,7 +190,7 @@ public sealed class ThreadMomentum
         if (score < 55) return "ゆったり";
         if (score < 75) return "平常運転";
         if (score < 88) return "にぎやか";
-        return "大盛況";
+        return "超過密";
     }
 
     /// <summary>0–5 filled slots. Score 0 is empty; each verbal band adds one block.</summary>

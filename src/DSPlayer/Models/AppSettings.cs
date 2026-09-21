@@ -73,6 +73,9 @@ public sealed class AppSettings
     public bool WindowSnapEnabled { get; set; } = true;
     public bool WindowSnapToWindows { get; set; } = true;
     public int WindowSnapDistance { get; set; } = 12;
+    public bool SaveWindowPlacement { get; set; } = true;
+    public bool SaveVolume { get; set; }
+    public double SavedVolume { get; set; }
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public double? WindowWidth { get; set; }
@@ -189,10 +192,6 @@ public sealed class AppSettings
     private JsonObject CommonDocument()
     {
         var document = JsonSerializer.SerializeToNode(this, JsonOptions)!.AsObject();
-        // Legacy placement fields remain readable for migration, but new placement saves
-        // go to window-placements.json and never overwrite shared appearance preferences.
-        foreach (var key in new[] { "windowLeft", "windowTop", "windowWidth", "windowHeight" })
-            document.Remove(key);
         return document;
     }
 
@@ -266,6 +265,9 @@ public sealed class AppSettings
         to.WindowSnapEnabled = from.WindowSnapEnabled;
         to.WindowSnapToWindows = from.WindowSnapToWindows;
         to.WindowSnapDistance = from.WindowSnapDistance;
+        to.SaveWindowPlacement = from.SaveWindowPlacement;
+        to.SaveVolume = from.SaveVolume;
+        to.SavedVolume = from.SavedVolume;
         to.WindowLeft = from.WindowLeft;
         to.WindowTop = from.WindowTop;
         to.WindowWidth = from.WindowWidth;
@@ -292,7 +294,7 @@ public sealed class AppSettings
 
     public void Sanitize()
     {
-        if (BbsIntervalSeconds < 3) BbsIntervalSeconds = 3;
+        if (BbsIntervalSeconds < 5) BbsIntervalSeconds = 5;
         if (BbsIntervalSeconds > 120) BbsIntervalSeconds = 120;
         if (string.IsNullOrWhiteSpace(BbsUserAgent))
             BbsUserAgent = "Monazilla/1.00 (DSPlayer/1.00)";
@@ -316,6 +318,7 @@ public sealed class AppSettings
         CommentListTheme = ThemeComments.NormalizeId(CommentListTheme);
         MomentumStyle = ThreadMomentum.NormalizeStyle(MomentumStyle);
         WindowSnapDistance = WindowSnapDistance switch { <= 8 => 8, >= 18 => 18, _ => 12 };
+        SavedVolume = Math.Clamp(SavedVolume, 0, 100);
     }
 
     [JsonIgnore]
