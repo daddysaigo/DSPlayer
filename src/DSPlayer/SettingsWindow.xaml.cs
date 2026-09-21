@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using DSPlayer.Models;
+using DSPlayer.Services;
 using DSPlayer.Services.Bbs;
 using DSPlayer.Themes;
 
@@ -107,9 +108,12 @@ public partial class SettingsWindow : Window
             ChkShowName.IsChecked = settings.ShowResName;
             ChkShowDate.IsChecked = settings.ShowResDate;
             IntervalBox.Text = settings.BbsIntervalSeconds.ToString();
+            PcrBrowserPathBox.Text = settings.PcrBrowserPath ?? PcrBrowserLauncher.FindExecutable() ?? "";
             ChkMessageNormalize.IsChecked = settings.MessageNormalize;
             ChkEmbedImages.IsChecked = settings.EmbedCommentImages;
             ChkWindowSnap.IsChecked = settings.WindowSnapEnabled;
+            SnapTargetBox.SelectedIndex = settings.WindowSnapToWindows ? 1 : 0;
+            SnapStrengthBox.SelectedIndex = settings.WindowSnapDistance switch { 8 => 0, 18 => 2, _ => 1 };
         }
         finally
         {
@@ -125,9 +129,12 @@ public partial class SettingsWindow : Window
         WireLiveCombo(UiThemeBox);
         WireLiveCombo(CommentThemeBox);
         WireLiveCombo(MomentumStyleBox);
+        WireLiveCombo(SnapTargetBox);
+        WireLiveCombo(SnapStrengthBox);
         WireLiveText(HeaderFontSizeBox);
         WireLiveText(BodyFontSizeBox);
         WireLiveText(IntervalBox);
+        WireLiveText(PcrBrowserPathBox);
 
         ChkShowNumber.Checked += (_, _) => OnAnyChanged();
         ChkShowNumber.Unchecked += (_, _) => OnAnyChanged();
@@ -163,6 +170,19 @@ public partial class SettingsWindow : Window
         UpdatePreview();
         _liveDebounce.Stop();
         _liveDebounce.Start();
+    }
+
+    private void BrowsePcrBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "BBSブラウザの実行ファイルを選択",
+            Filter = "実行ファイル (*.exe)|*.exe|すべてのファイル (*.*)|*.*",
+            CheckFileExists = true,
+            FileName = PcrBrowserPathBox.Text,
+        };
+        if (dialog.ShowDialog(this) == true)
+            PcrBrowserPathBox.Text = dialog.FileName;
     }
 
     private void PushAndLiveApply()
@@ -244,9 +264,13 @@ public partial class SettingsWindow : Window
         Settings.ShowResDate = ChkShowDate.IsChecked == true;
         if (int.TryParse(IntervalBox.Text?.Trim(), out var sec))
             Settings.BbsIntervalSeconds = sec;
+        Settings.PcrBrowserPath = string.IsNullOrWhiteSpace(PcrBrowserPathBox.Text)
+            ? null : PcrBrowserPathBox.Text.Trim();
         Settings.MessageNormalize = ChkMessageNormalize.IsChecked == true;
         Settings.EmbedCommentImages = ChkEmbedImages.IsChecked == true;
         Settings.WindowSnapEnabled = ChkWindowSnap.IsChecked == true;
+        Settings.WindowSnapToWindows = SnapTargetBox.SelectedIndex == 1;
+        Settings.WindowSnapDistance = SnapStrengthBox.SelectedIndex switch { 0 => 8, 2 => 18, _ => 12 };
     }
 
     private static void FillFontCombo(System.Windows.Controls.ComboBox box)

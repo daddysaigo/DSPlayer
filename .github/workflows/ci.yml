@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore DSPlayer.sln
+      - run: dotnet test tests/DSPlayer.Tests/DSPlayer.Tests.csproj -c Release --no-restore --filter "Category!=Live"
+      - run: dotnet build src/DSPlayer/DSPlayer.csproj -c Release --no-restore

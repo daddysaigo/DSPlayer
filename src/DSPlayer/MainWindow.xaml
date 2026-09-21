@@ -40,8 +40,6 @@
             <MenuItem x:Name="MenuReconnect" Header="再接続" IsEnabled="False" Click="Menu_Reconnect_Click"/>
             <Separator/>
             <MenuItem x:Name="MenuCommentVisible" Header="コメントを表示" IsCheckable="True" IsChecked="True" Click="Menu_CommentVisible_Click"/>
-            <MenuItem Header="コメントを最下部へ" Click="Menu_ScrollBottom_Click"/>
-            <MenuItem Header="選択をコピー" Click="Menu_CopyComment_Click" InputGestureText="Ctrl+C"/>
             <MenuItem Header="スレッドを選択..." Click="Menu_SelectThread_Click"/>
             <Separator/>
             <MenuItem Header="BBSブラウザを開く (PCRBrowser)" Click="Menu_OpenPcrBrowser_Click"/>

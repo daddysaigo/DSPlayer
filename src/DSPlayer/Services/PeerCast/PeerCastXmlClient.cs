@@ -75,8 +75,6 @@ public sealed class PeerCastXmlClient
             var relay = ch.Element("relay");
 
             var listeners = AttrInt(hits, "listeners");
-            if (listeners == 0)
-                listeners = AttrInt(relay, "listeners");
 
             return new PeerCastChannelInfo
             {
