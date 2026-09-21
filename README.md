@@ -24,7 +24,7 @@ PeCaRecorderから起動して使う、Windows向けのPeerCast視聴プレイ�
 | ブラウザで開く | オフ |
 | IDを検証 | オン推奨 |
 
-チャンネルをPeCaRecorderから開くとDSPlayerが起動します。DSPlayer.exeを直接起動してもチャンネルは再生されません。
+チャンネルをPeCaRecorderから開くとDSPlayerが起動します。
 
 ### 起動引数
 
