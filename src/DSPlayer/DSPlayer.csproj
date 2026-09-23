@@ -12,8 +12,8 @@
     <AssemblyName>DSPlayer</AssemblyName>
     <RootNamespace>DSPlayer</RootNamespace>
     <Product>DSPlayer</Product>
-    <Description>Modern PCRPlayer replacement for PeCaRecorder / PeerCast</Description>
-    <Version>0.3.1</Version>
+    <Description>PeerCast viewer for PeCaRecorder with BBS comments and momentum display</Description>
+    <Version>0.3.2</Version>
     <Authors>daddysaigo</Authors>
     <Copyright>Copyright (c) 2026 daddysaigo</Copyright>
     <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>

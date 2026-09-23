@@ -39,6 +39,7 @@
             <MenuItem Header="一時停止 / 再開" Click="Menu_Pause_Click"/>
             <MenuItem x:Name="MenuReconnect" Header="再接続" IsEnabled="False" Click="Menu_Reconnect_Click"/>
             <Separator/>
+            <MenuItem x:Name="MenuAlwaysOnTop" Header="最前面に表示" IsCheckable="True" Click="Menu_AlwaysOnTop_Click"/>
             <MenuItem x:Name="MenuCommentVisible" Header="コメントを表示" IsCheckable="True" IsChecked="True" Click="Menu_CommentVisible_Click"/>
             <MenuItem Header="スレッドを選択..." Click="Menu_SelectThread_Click"/>
             <Separator/>

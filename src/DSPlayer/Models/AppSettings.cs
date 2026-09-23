@@ -73,6 +73,7 @@ public sealed class AppSettings
     public bool WindowSnapEnabled { get; set; } = true;
     public bool WindowSnapToWindows { get; set; } = true;
     public int WindowSnapDistance { get; set; } = 12;
+    public bool AlwaysOnTop { get; set; }
     public bool SaveWindowPlacement { get; set; } = true;
     public bool SaveVolume { get; set; }
     public double SavedVolume { get; set; }
@@ -265,6 +266,7 @@ public sealed class AppSettings
         to.WindowSnapEnabled = from.WindowSnapEnabled;
         to.WindowSnapToWindows = from.WindowSnapToWindows;
         to.WindowSnapDistance = from.WindowSnapDistance;
+        to.AlwaysOnTop = from.AlwaysOnTop;
         to.SaveWindowPlacement = from.SaveWindowPlacement;
         to.SaveVolume = from.SaveVolume;
         to.SavedVolume = from.SavedVolume;

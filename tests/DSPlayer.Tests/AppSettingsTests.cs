@@ -11,6 +11,7 @@ public sealed class AppSettingsTests
         var settings = new AppSettings();
 
         Assert.Equal(7, settings.BbsIntervalSeconds);
+        Assert.False(settings.AlwaysOnTop);
         Assert.True(settings.SaveWindowPlacement);
         Assert.False(settings.SaveVolume);
         Assert.Equal(0, settings.SavedVolume);

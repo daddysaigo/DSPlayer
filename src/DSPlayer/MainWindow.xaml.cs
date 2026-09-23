@@ -213,6 +213,8 @@ public partial class MainWindow : Window
         ApplyCommentFont();
         ApplyUiTheme(); // chrome + always ends with ApplyCommentListTheme()
         ApplySavedWindowPlacement();
+        Topmost = _settings.AlwaysOnTop;
+        MenuAlwaysOnTop.IsChecked = Topmost;
         RefreshStatusBar();
 
         PlayerPanel.MouseWheel += PlayerPanel_MouseWheel;
@@ -226,6 +228,7 @@ public partial class MainWindow : Window
             ContextMenu.Opened += (_, _) =>
             {
                 MenuReconnect.IsEnabled = !_closing && _playerReady && _launchArgs.HasStream;
+                MenuAlwaysOnTop.IsChecked = Topmost;
                 _lbuttonWasDown = false;
                 try { Mouse.OverrideCursor = null; } catch { /* ignore */ }
             };
@@ -2662,6 +2665,13 @@ public partial class MainWindow : Window
 
     private void Menu_CommentVisible_Click(object sender, RoutedEventArgs e) =>
         SetCommentVisible(MenuCommentVisible.IsChecked == true);
+    private void Menu_AlwaysOnTop_Click(object sender, RoutedEventArgs e)
+    {
+        Topmost = MenuAlwaysOnTop.IsChecked == true;
+        _settings.AlwaysOnTop = Topmost;
+        try { _settings.Save(); }
+        catch (Exception ex) { WriteLog("save always-on-top: " + ex.Message); }
+    }
     private void Menu_ScrollBottom_Click(object sender, RoutedEventArgs e)
     {
         ResumeLiveComments();
