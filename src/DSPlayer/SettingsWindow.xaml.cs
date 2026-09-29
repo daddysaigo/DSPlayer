@@ -54,6 +54,9 @@ public partial class SettingsWindow : Window
     public SettingsWindow(AppSettings settings, Action? onLiveApply = null)
     {
         InitializeComponent();
+        var version = GetType().Assembly.GetName().Version;
+        if (version is not null)
+            Title = $"設定 - DSPlayer v{version.Major}.{version.Minor}.{version.Build}";
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _onLiveApply = onLiveApply;
 
