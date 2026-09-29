@@ -11,6 +11,8 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using DSPlayer.Controls;
 using DSPlayer.Models;
 using DSPlayer.Services;
@@ -73,6 +75,12 @@ public partial class MainWindow : Window
     private bool _writing;
     private bool _commentVisible = true;
     private bool _threadComboSyncing;
+    private bool _stampCastMiniVisible;
+    private bool _stampCastRestoredCommentHidden;
+    private bool _stampCastWebViewReady;
+    private bool _stampCastWebViewInitializing;
+    private WebView2? _stampCastWebView;
+    private string? _stampCastLoadedUrl;
 
     private PeerCastChannelInfo? _channelInfo;
     private DispatcherTimer? _statsTimer;
@@ -210,6 +218,7 @@ public partial class MainWindow : Window
         CommentList.PreviewMouseWheel += CommentList_PreviewMouseWheel;
         PreviewKeyDown += CommentList_AutoScroll_PreviewKeyDown;
         ApplyCommentPanelSettings();
+        ApplyStampCastSettings();
         ApplyCommentFont();
         ApplyUiTheme(); // chrome + always ends with ApplyCommentListTheme()
         ApplySavedWindowPlacement();
@@ -811,6 +820,8 @@ public partial class MainWindow : Window
 
     private void SetCommentVisible(bool visible, bool persist = true)
     {
+        if (!visible && _stampCastMiniVisible)
+            SetStampCastMiniVisible(false);
         _commentVisible = visible;
         MenuCommentVisible.IsChecked = visible;
         if (visible)
@@ -2775,6 +2786,7 @@ public partial class MainWindow : Window
     private void ApplySettingsLive(bool restartBbs = true)
     {
         CommentImageLoader.EmbedEnabled = _settings.EmbedCommentImages;
+        ApplyStampCastSettings();
         ApplyCommentFont();
         ApplyUiTheme(); // includes ApplyCommentListTheme at end
         ApplyCommentListTheme();
@@ -3268,6 +3280,143 @@ public partial class MainWindow : Window
         catch (Exception ex) { WriteLog("open board: " + ex.Message); }
     }
 
+    private bool StampCastConfigured => _settings.StampCastEnabled &&
+        Uri.TryCreate(_settings.StampCastMiniUrl, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private void ApplyStampCastSettings()
+    {
+        StampCastButton.Visibility = StampCastConfigured ? Visibility.Visible : Visibility.Collapsed;
+        if (!StampCastConfigured)
+        {
+            if (_stampCastMiniVisible)
+                SetStampCastMiniVisible(false);
+            DisposeStampCastWebView();
+        }
+        else if (_stampCastWebViewReady && _stampCastLoadedUrl != _settings.StampCastMiniUrl)
+        {
+            _stampCastWebView?.CoreWebView2.Navigate(_settings.StampCastMiniUrl);
+            _stampCastLoadedUrl = _settings.StampCastMiniUrl;
+        }
+    }
+
+    private async void StampCastButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!StampCastConfigured) return;
+        SetStampCastMiniVisible(!_stampCastMiniVisible);
+        if (!_stampCastMiniVisible || _stampCastWebViewReady || _stampCastWebViewInitializing) return;
+
+        _stampCastWebViewInitializing = true;
+        WebView2? webView = null;
+        try
+        {
+            var dataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DSPlayer", "WebView2");
+            Directory.CreateDirectory(dataDir);
+            var env = await CoreWebView2Environment.CreateAsync(null, dataDir);
+            webView = new WebView2();
+            _stampCastWebView = webView;
+            StampCastWebViewHost.Content = webView;
+            await webView.EnsureCoreWebView2Async(env);
+            if (!StampCastConfigured || !_stampCastMiniVisible || !ReferenceEquals(_stampCastWebView, webView))
+            {
+                webView.Dispose();
+                if (ReferenceEquals(_stampCastWebView, webView))
+                {
+                    _stampCastWebView = null;
+                    StampCastWebViewHost.Content = null;
+                }
+                return;
+            }
+            webView.CoreWebView2.NavigationCompleted += StampCastWebView_NavigationCompleted;
+            webView.CoreWebView2.NewWindowRequested += StampCastWebView_NewWindowRequested;
+            webView.CoreWebView2.Navigate(_settings.StampCastMiniUrl);
+            _stampCastLoadedUrl = _settings.StampCastMiniUrl;
+            _stampCastWebViewReady = true;
+        }
+        catch (Exception ex)
+        {
+            WriteLog("StampCast WebView2: " + ex.Message);
+            if (StampCastConfigured && _stampCastMiniVisible && ReferenceEquals(_stampCastWebView, webView))
+            {
+                StampCastLoadError.Visibility = Visibility.Visible;
+                OpenStampCastInBrowser();
+            }
+        }
+        finally
+        {
+            _stampCastWebViewInitializing = false;
+        }
+    }
+
+    private void StampCastWebView_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return;
+        try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception ex) { WriteLog("open StampCast link: " + ex.Message); }
+    }
+
+    private void StampCastWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+        {
+            StampCastLoadError.Visibility = Visibility.Visible;
+            OpenStampCastInBrowser();
+        }
+    }
+
+    private void SetStampCastMiniVisible(bool visible)
+    {
+        if (visible && !_commentVisible)
+        {
+            // The mini view needs a visible comment column, but do not alter the user's saved preference.
+            _stampCastRestoredCommentHidden = true;
+            SetCommentVisible(true, persist: false);
+        }
+
+        _stampCastMiniVisible = visible;
+        StampCastMiniPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        CommentList.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
+        if (visible)
+            NewPostsJumpButton.Visibility = Visibility.Collapsed;
+        else
+            UpdateNewPostsJumpButton();
+        StampCastButton.Content = visible ? "コメント" : "スタンプ";
+        StampCastButton.ToolTip = visible ? "コメント欄に戻る" : "StampCastミニ画面を表示";
+        if (visible && _stampCastWebViewReady && _stampCastLoadedUrl != _settings.StampCastMiniUrl)
+        {
+            _stampCastWebView?.CoreWebView2.Navigate(_settings.StampCastMiniUrl);
+            _stampCastLoadedUrl = _settings.StampCastMiniUrl;
+        }
+
+        if (!visible && _stampCastRestoredCommentHidden)
+        {
+            _stampCastRestoredCommentHidden = false;
+            SetCommentVisible(false, persist: false);
+        }
+    }
+
+    private void DisposeStampCastWebView()
+    {
+        try { _stampCastWebView?.Dispose(); } catch { /* ignore */ }
+        _stampCastWebView = null;
+        _stampCastWebViewInitializing = false;
+        StampCastWebViewHost.Content = null;
+        _stampCastWebViewReady = false;
+        _stampCastLoadedUrl = null;
+        StampCastLoadError.Visibility = Visibility.Collapsed;
+    }
+
+    private void OpenStampCastInBrowser()
+    {
+        try { Process.Start(new ProcessStartInfo(_settings.StampCastMiniUrl) { UseShellExecute = true }); }
+        catch (Exception ex) { WriteLog("open StampCast: " + ex.Message); }
+    }
+
     private void Menu_OpenLog_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -3588,6 +3737,8 @@ public partial class MainWindow : Window
         try { _idRefHoverTimer?.Stop(); } catch { /* ignore */ }
         try { HideIdRefPopup(); } catch { /* ignore */ }
         try { CloseImagePopup(); } catch { /* ignore */ }
+        try { _stampCastWebView?.Dispose(); } catch { /* ignore */ }
+        _stampCastWebView = null;
         try { DisposeFsChromeOverlay(); } catch { /* ignore */ }
         try { _bbsPoller?.Stop(); } catch { /* ignore */ }
         try { _videoChrome?.HideChrome(); } catch { /* ignore */ }

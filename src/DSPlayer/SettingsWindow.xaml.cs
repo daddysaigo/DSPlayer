@@ -109,6 +109,8 @@ public partial class SettingsWindow : Window
             ChkShowDate.IsChecked = settings.ShowResDate;
             IntervalBox.Text = settings.BbsIntervalSeconds.ToString();
             PcrBrowserPathBox.Text = settings.PcrBrowserPath ?? PcrBrowserLauncher.FindExecutable() ?? "";
+            ChkStampCast.IsChecked = settings.StampCastEnabled;
+            StampCastMiniUrlBox.Text = settings.StampCastMiniUrl;
             ChkMessageNormalize.IsChecked = settings.MessageNormalize;
             ChkEmbedImages.IsChecked = settings.EmbedCommentImages;
             ChkWindowSnap.IsChecked = settings.WindowSnapEnabled;
@@ -137,6 +139,7 @@ public partial class SettingsWindow : Window
         WireLiveText(BodyFontSizeBox);
         WireLiveText(IntervalBox);
         WireLiveText(PcrBrowserPathBox);
+        WireLiveText(StampCastMiniUrlBox);
 
         ChkShowNumber.Checked += (_, _) => OnAnyChanged();
         ChkShowNumber.Unchecked += (_, _) => OnAnyChanged();
@@ -148,6 +151,8 @@ public partial class SettingsWindow : Window
         ChkMessageNormalize.Unchecked += (_, _) => OnAnyChanged();
         ChkEmbedImages.Checked += (_, _) => OnAnyChanged();
         ChkEmbedImages.Unchecked += (_, _) => OnAnyChanged();
+        ChkStampCast.Checked += (_, _) => OnAnyChanged();
+        ChkStampCast.Unchecked += (_, _) => OnAnyChanged();
         ChkWindowSnap.Checked += (_, _) => OnAnyChanged();
         ChkWindowSnap.Unchecked += (_, _) => OnAnyChanged();
         ChkSaveWindowPlacement.Checked += (_, _) => OnAnyChanged();
@@ -272,6 +277,8 @@ public partial class SettingsWindow : Window
             Settings.BbsIntervalSeconds = sec;
         Settings.PcrBrowserPath = string.IsNullOrWhiteSpace(PcrBrowserPathBox.Text)
             ? null : PcrBrowserPathBox.Text.Trim();
+        Settings.StampCastEnabled = ChkStampCast.IsChecked == true;
+        Settings.StampCastMiniUrl = StampCastMiniUrlBox.Text.Trim();
         Settings.MessageNormalize = ChkMessageNormalize.IsChecked == true;
         Settings.EmbedCommentImages = ChkEmbedImages.IsChecked == true;
         Settings.WindowSnapEnabled = ChkWindowSnap.IsChecked == true;

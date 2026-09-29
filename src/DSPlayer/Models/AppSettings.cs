@@ -42,6 +42,8 @@ public sealed class AppSettings
     public string MomentumStyle { get; set; } = "Heat";
 
     public string? PcrBrowserPath { get; set; }
+    public bool StampCastEnabled { get; set; }
+    public string StampCastMiniUrl { get; set; } = "";
 
     public int BbsIntervalSeconds { get; set; } = 7;
     public string BbsUserAgent { get; set; } = "Monazilla/1.00 (DSPlayer/1.00)";
@@ -246,6 +248,8 @@ public sealed class AppSettings
         to.CommentListTheme = from.CommentListTheme;
         to.MomentumStyle = from.MomentumStyle;
         to.PcrBrowserPath = from.PcrBrowserPath;
+        to.StampCastEnabled = from.StampCastEnabled;
+        to.StampCastMiniUrl = from.StampCastMiniUrl;
         to.BbsIntervalSeconds = from.BbsIntervalSeconds;
         to.BbsUserAgent = from.BbsUserAgent;
         to.MessageNormalize = from.MessageNormalize;
@@ -300,6 +304,9 @@ public sealed class AppSettings
         if (BbsIntervalSeconds > 120) BbsIntervalSeconds = 120;
         if (string.IsNullOrWhiteSpace(BbsUserAgent))
             BbsUserAgent = "Monazilla/1.00 (DSPlayer/1.00)";
+        if (!Uri.TryCreate(StampCastMiniUrl, UriKind.Absolute, out var miniUri) ||
+            (miniUri.Scheme != Uri.UriSchemeHttp && miniUri.Scheme != Uri.UriSchemeHttps))
+            StampCastMiniUrl = "";
         if (CommentPanelWidth < 120) CommentPanelWidth = 120;
         if (CommentPanelWidth > 900) CommentPanelWidth = 900;
         if (string.IsNullOrWhiteSpace(CommentHeaderFontFamily))

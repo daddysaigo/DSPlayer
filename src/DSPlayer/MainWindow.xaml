@@ -288,6 +288,17 @@
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                         </ListBox>
+                        <Grid x:Name="StampCastMiniPanel" Visibility="Collapsed" Background="#FF171717">
+                            <ContentControl x:Name="StampCastWebViewHost" />
+                            <TextBlock x:Name="StampCastLoadError"
+                                       Visibility="Collapsed"
+                                       Text="StampCastミニ画面を開けませんでした。通常ブラウザで開きます。"
+                                       Foreground="#FFE0E0E0"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Margin="20"/>
+                        </Grid>
                         <!-- Shown while reading history; click resumes live follow -->
                         <Button x:Name="NewPostsJumpButton"
                                 Panel.ZIndex="1"
@@ -316,6 +327,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
@@ -435,8 +447,18 @@
                         </TextBox.Template>
                     </TextBox>
 
-                    <Button x:Name="WriteButton"
+                    <Button x:Name="StampCastButton"
                             Grid.Column="2"
+                            Content="スタンプ"
+                            Width="64"
+                            Height="28"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Top"
+                            ToolTip="StampCastミニ画面を表示"
+                            Click="StampCastButton_Click"/>
+
+                    <Button x:Name="WriteButton"
+                            Grid.Column="3"
                             Content="書込"
                             Width="56"
                             Height="28"

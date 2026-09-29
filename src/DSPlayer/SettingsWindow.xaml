@@ -213,6 +213,19 @@
                              ToolTip="右クリックメニューの「BBSブラウザを開く」で使用する実行ファイル"/>
                     <Button Grid.Column="2" Content="参照..." Margin="8,0,0,0" Click="BrowsePcrBrowser_Click"/>
                 </Grid>
+                <CheckBox x:Name="ChkStampCast" Content="StampCastミニ画面を有効にする"
+                          Foreground="#FFE8E8E8" Margin="0,4,0,4"/>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="StampCast URL" Foreground="#FFAAAAAA" VerticalAlignment="Center"/>
+                    <TextBox x:Name="StampCastMiniUrlBox" Grid.Column="1" Height="28"
+                             Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF555555"
+                             CaretBrush="White" VerticalContentAlignment="Center"
+                             ToolTip="StampCastのミニ画面URL（httpまたはhttps）"/>
+                </Grid>
                 <Grid Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="110"/>
