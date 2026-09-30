@@ -451,7 +451,7 @@
                             Grid.Column="2"
                             Content="スタンプ"
                             Width="64"
-                            Height="28"
+                            Height="{Binding Height, ElementName=WriteButton}"
                             Margin="8,0,0,0"
                             VerticalAlignment="Top"
                             ToolTip="StampCastミニ画面を表示"
