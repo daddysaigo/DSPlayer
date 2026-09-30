@@ -454,8 +454,6 @@
                               Height="{Binding Height, ElementName=WriteButton}"
                               Margin="8,0,0,0"
                               VerticalAlignment="Top"
-                              IsEditable="True"
-                              ToolTip="投稿時の音声を選択。新しいキャラは名前を直接入力できます"
                               DisplayMemberPath="Label"
                               SelectedValuePath="Canonical"/>
 

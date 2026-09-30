@@ -31,7 +31,8 @@ public partial class MainWindow : Window
         new VoiceDirectiveOption("通常音声", ""),
         new VoiceDirectiveOption("マオマオ", "マオマオ"),
         new VoiceDirectiveOption("加藤純一", "加藤純一"),
-        new VoiceDirectiveOption("武田鉄矢", "武田鉄矢")
+        new VoiceDirectiveOption("武田鉄矢", "武田鉄矢"),
+        new VoiceDirectiveOption("リヴァイ兵長", "リヴァイ兵長")
     };
     private readonly LaunchArgs _launchArgs;
     private readonly AppSettings _settings;
@@ -1624,9 +1625,8 @@ public partial class MainWindow : Window
         var thread = _writeThread ?? _bbsPoller?.ResolvedThread;
         if (thread is null || !thread.CanWrite) return;
 
-        // Text is the source for both listed options and newly typed voices.
-        // This also handles editing a selected item without stale SelectedItem data.
-        var body = VoiceDirectiveComposer.Compose(WriteBox.Text, WriteVoiceBox.Text);
+        var selectedVoice = WriteVoiceBox.SelectedValue as string ?? string.Empty;
+        var body = VoiceDirectiveComposer.Compose(WriteBox.Text, selectedVoice);
         if (body.Length == 0) return;
 
         // Name/mail are not in settings UI; always sage anonymous post for now.
