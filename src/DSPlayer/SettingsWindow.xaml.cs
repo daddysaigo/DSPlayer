@@ -112,6 +112,7 @@ public partial class SettingsWindow : Window
             ChkShowDate.IsChecked = settings.ShowResDate;
             IntervalBox.Text = settings.BbsIntervalSeconds.ToString();
             PcrBrowserPathBox.Text = settings.PcrBrowserPath ?? PcrBrowserLauncher.FindExecutable() ?? "";
+            ChkWriteVoiceSelector.IsChecked = settings.ShowWriteVoiceSelector;
             ChkStampCast.IsChecked = settings.StampCastEnabled;
             StampCastMiniUrlBox.Text = settings.StampCastMiniUrl;
             ChkMessageNormalize.IsChecked = settings.MessageNormalize;
@@ -154,6 +155,8 @@ public partial class SettingsWindow : Window
         ChkMessageNormalize.Unchecked += (_, _) => OnAnyChanged();
         ChkEmbedImages.Checked += (_, _) => OnAnyChanged();
         ChkEmbedImages.Unchecked += (_, _) => OnAnyChanged();
+        ChkWriteVoiceSelector.Checked += (_, _) => OnAnyChanged();
+        ChkWriteVoiceSelector.Unchecked += (_, _) => OnAnyChanged();
         ChkStampCast.Checked += (_, _) => OnAnyChanged();
         ChkStampCast.Unchecked += (_, _) => OnAnyChanged();
         ChkWindowSnap.Checked += (_, _) => OnAnyChanged();
@@ -280,6 +283,7 @@ public partial class SettingsWindow : Window
             Settings.BbsIntervalSeconds = sec;
         Settings.PcrBrowserPath = string.IsNullOrWhiteSpace(PcrBrowserPathBox.Text)
             ? null : PcrBrowserPathBox.Text.Trim();
+        Settings.ShowWriteVoiceSelector = ChkWriteVoiceSelector.IsChecked == true;
         Settings.StampCastEnabled = ChkStampCast.IsChecked == true;
         Settings.StampCastMiniUrl = StampCastMiniUrlBox.Text.Trim();
         Settings.MessageNormalize = ChkMessageNormalize.IsChecked == true;

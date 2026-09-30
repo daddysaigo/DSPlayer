@@ -42,6 +42,7 @@ public sealed class AppSettings
     public string MomentumStyle { get; set; } = "Heat";
 
     public string? PcrBrowserPath { get; set; }
+    public bool ShowWriteVoiceSelector { get; set; }
     public bool StampCastEnabled { get; set; } = true;
     public string StampCastMiniUrl { get; set; } = "https://stampcast.tukareta.net/mini";
 
@@ -248,6 +249,7 @@ public sealed class AppSettings
         to.CommentListTheme = from.CommentListTheme;
         to.MomentumStyle = from.MomentumStyle;
         to.PcrBrowserPath = from.PcrBrowserPath;
+        to.ShowWriteVoiceSelector = from.ShowWriteVoiceSelector;
         to.StampCastEnabled = from.StampCastEnabled;
         to.StampCastMiniUrl = from.StampCastMiniUrl;
         to.BbsIntervalSeconds = from.BbsIntervalSeconds;

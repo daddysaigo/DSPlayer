@@ -202,6 +202,8 @@
 
                 <Separator Background="#FF414141" Margin="0,0,0,8"/>
                 <TextBlock Text="掲示板・外部ブラウザ" Style="{StaticResource SectionTitle}"/>
+                <CheckBox x:Name="ChkWriteVoiceSelector" Content="書込欄に読み上げ音声の選択を表示"
+                          Foreground="#FFE8E8E8" Margin="0,4,0,10"/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="110"/>

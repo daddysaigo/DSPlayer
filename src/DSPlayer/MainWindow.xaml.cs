@@ -205,6 +205,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         WriteVoiceBox.ItemsSource = WriteVoiceOptions;
         WriteVoiceBox.SelectedIndex = 0;
+        WriteVoiceBox.Visibility = _settings.ShowWriteVoiceSelector ? Visibility.Visible : Visibility.Collapsed;
         CommentImageLoader.EmbedEnabled = _settings.EmbedCommentImages;
         CommentList.ItemsSource = _comments;
         // Bubbling >>N clicks from AnchorBodyBlock inside the item template
@@ -1625,7 +1626,7 @@ public partial class MainWindow : Window
         var thread = _writeThread ?? _bbsPoller?.ResolvedThread;
         if (thread is null || !thread.CanWrite) return;
 
-        var selectedVoice = WriteVoiceBox.SelectedValue as string ?? string.Empty;
+        var selectedVoice = _settings.ShowWriteVoiceSelector ? WriteVoiceBox.SelectedValue as string ?? string.Empty : string.Empty;
         var body = VoiceDirectiveComposer.Compose(WriteBox.Text, selectedVoice);
         if (body.Length == 0) return;
 
@@ -2797,6 +2798,7 @@ public partial class MainWindow : Window
     private void ApplySettingsLive(bool restartBbs = true)
     {
         CommentImageLoader.EmbedEnabled = _settings.EmbedCommentImages;
+        WriteVoiceBox.Visibility = _settings.ShowWriteVoiceSelector ? Visibility.Visible : Visibility.Collapsed;
         ApplyStampCastSettings();
         ApplyCommentFont();
         ApplyUiTheme(); // includes ApplyCommentListTheme at end
