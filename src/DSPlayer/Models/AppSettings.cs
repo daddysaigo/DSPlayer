@@ -42,8 +42,8 @@ public sealed class AppSettings
     public string MomentumStyle { get; set; } = "Heat";
 
     public string? PcrBrowserPath { get; set; }
-    public bool StampCastEnabled { get; set; }
-    public string StampCastMiniUrl { get; set; } = "";
+    public bool StampCastEnabled { get; set; } = true;
+    public string StampCastMiniUrl { get; set; } = "https://stampcast.tukareta.net/mini";
 
     public int BbsIntervalSeconds { get; set; } = 7;
     public string BbsUserAgent { get; set; } = "Monazilla/1.00 (DSPlayer/1.00)";
