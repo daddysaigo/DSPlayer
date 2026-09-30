@@ -1624,7 +1624,9 @@ public partial class MainWindow : Window
         var thread = _writeThread ?? _bbsPoller?.ResolvedThread;
         if (thread is null || !thread.CanWrite) return;
 
-        var body = VoiceDirectiveComposer.Compose(WriteBox.Text, WriteVoiceBox.SelectedValue as string);
+        // Text is the source for both listed options and newly typed voices.
+        // This also handles editing a selected item without stale SelectedItem data.
+        var body = VoiceDirectiveComposer.Compose(WriteBox.Text, WriteVoiceBox.Text);
         if (body.Length == 0) return;
 
         // Name/mail are not in settings UI; always sage anonymous post for now.

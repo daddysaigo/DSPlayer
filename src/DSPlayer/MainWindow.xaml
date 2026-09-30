@@ -448,7 +448,16 @@
                         </TextBox.Template>
                     </TextBox>
 
-                    <ComboBox x:Name="WriteVoiceBox" Grid.Column="2" Width="106" Height="28" Margin="8,0,0,0" VerticalAlignment="Top" ToolTip="投稿時に音声指定を付けます" DisplayMemberPath="Label" SelectedValuePath="Canonical"/>
+                    <ComboBox x:Name="WriteVoiceBox"
+                              Grid.Column="2"
+                              Width="106"
+                              Height="{Binding Height, ElementName=WriteButton}"
+                              Margin="8,0,0,0"
+                              VerticalAlignment="Top"
+                              IsEditable="True"
+                              ToolTip="投稿時の音声を選択。新しいキャラは名前を直接入力できます"
+                              DisplayMemberPath="Label"
+                              SelectedValuePath="Canonical"/>
 
                     <Button x:Name="StampCastButton"
                             Grid.Column="3"
