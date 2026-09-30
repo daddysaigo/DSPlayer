@@ -26,6 +26,13 @@ namespace DSPlayer;
 
 public partial class MainWindow : Window
 {
+    private static readonly IReadOnlyList<VoiceDirectiveOption> WriteVoiceOptions = new[]
+    {
+        new VoiceDirectiveOption("通常音声", ""),
+        new VoiceDirectiveOption("マオマオ", "マオマオ"),
+        new VoiceDirectiveOption("加藤純一", "加藤純一"),
+        new VoiceDirectiveOption("武田鉄矢", "武田鉄矢")
+    };
     private readonly LaunchArgs _launchArgs;
     private readonly AppSettings _settings;
     private MpvPlayerHost? _player;
@@ -195,6 +202,8 @@ public partial class MainWindow : Window
             "player.log");
 
         InitializeComponent();
+        WriteVoiceBox.ItemsSource = WriteVoiceOptions;
+        WriteVoiceBox.SelectedIndex = 0;
         CommentImageLoader.EmbedEnabled = _settings.EmbedCommentImages;
         CommentList.ItemsSource = _comments;
         // Bubbling >>N clicks from AnchorBodyBlock inside the item template
@@ -1615,7 +1624,7 @@ public partial class MainWindow : Window
         var thread = _writeThread ?? _bbsPoller?.ResolvedThread;
         if (thread is null || !thread.CanWrite) return;
 
-        var body = (WriteBox.Text ?? "").Trim();
+        var body = VoiceDirectiveComposer.Compose(WriteBox.Text, WriteVoiceBox.SelectedValue as string);
         if (body.Length == 0) return;
 
         // Name/mail are not in settings UI; always sage anonymous post for now.

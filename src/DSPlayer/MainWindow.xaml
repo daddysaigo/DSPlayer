@@ -329,6 +329,7 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- フラットなスレタイ表示（旧デザイン）。クリックで一覧ポップアップ -->
@@ -447,8 +448,10 @@
                         </TextBox.Template>
                     </TextBox>
 
+                    <ComboBox x:Name="WriteVoiceBox" Grid.Column="2" Width="106" Height="28" Margin="8,0,0,0" VerticalAlignment="Top" ToolTip="投稿時に音声指定を付けます" DisplayMemberPath="Label" SelectedValuePath="Canonical"/>
+
                     <Button x:Name="StampCastButton"
-                            Grid.Column="2"
+                            Grid.Column="3"
                             Content="スタンプ"
                             Width="64"
                             Height="{Binding Height, ElementName=WriteButton}"
@@ -458,7 +461,7 @@
                             Click="StampCastButton_Click"/>
 
                     <Button x:Name="WriteButton"
-                            Grid.Column="3"
+                            Grid.Column="4"
                             Content="書込"
                             Width="56"
                             Height="28"
